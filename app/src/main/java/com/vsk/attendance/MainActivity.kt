@@ -30,7 +30,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.vsk.attendance.ui.AdminScreen
 import com.vsk.attendance.ui.AttendanceScreen
 import com.vsk.attendance.ui.LoginScreen
 import com.vsk.attendance.ui.MainViewModel
@@ -79,10 +78,30 @@ fun App(vm: MainViewModel = viewModel()) {
 
     when {
         staff == null -> LoginScreen(vm)
-        staff?.role == "admin" -> AdminScreen(vm)
+        staff?.role == "admin" -> AdminNotice(vm)
         else -> {
             if (hasPerm) AttendanceScreen(vm)
             else PermissionGate { permissionLauncher.launch(LOCATION_PERMISSIONS) }
+        }
+    }
+}
+
+@Composable
+private fun AdminNotice(vm: MainViewModel) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("Admins use the web dashboard", fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.titleLarge)
+        Text(
+            "This mobile app is for field staff duty attendance only. To view logs, add staff and " +
+                    "manage kendras, sign in to the Dhan Kharidi Samiksha admin dashboard in a browser.",
+            modifier = Modifier.padding(top = 8.dp, bottom = 20.dp)
+        )
+        Button(onClick = { vm.logout() }, modifier = Modifier.fillMaxWidth().height(50.dp)) {
+            Text("Sign out")
         }
     }
 }

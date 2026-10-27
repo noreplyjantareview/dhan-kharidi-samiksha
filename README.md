@@ -1,29 +1,22 @@
-# Dhan Kharidi Samiksha — field-staff duty attendance
+# Dhan Kharidi Samiksha
 
-Android app to verify that field staff actually report to, and stay at, their assigned duty
-location (procurement **kendra**). Built for the problem where staff were posted to a location
-but did not go to duty.
+Field-staff duty-attendance system for Chhattisgarh paddy-procurement monitoring. Verifies that
+staff actually report to, and stay at, their assigned duty location (**kendra**).
 
-- **Users do not pick a location.** The app reads device GPS on its own.
-- **Login = registered mobile number only** (no password, no OTP).
-- **Admin** creates kendras, enrolls staff, and assigns each person's allowed duty location(s).
-- **Two duty types:**
-  - **Fixed** — the person is tied to exactly one kendra.
-  - **Multi** — the person may mark attendance from several allowed kendras (e.g. a mobile officer).
-- **Auto check-in / check-out:** check-in fires when the person is inside an allowed kendra during
-  the arrival window; check-out fires automatically at the kendra's day-end time.
-- **Periodic re-verification (the anti-absenteeism core):** during duty hours the app sends a
-  presence "pulse" every N minutes. Each pulse is logged as **present** (inside an allowed kendra)
-  or **absent** (outside). Arriving-then-leaving, or never staying, shows up as absent pulses.
-- **Foreground only:** tracking runs while the app is open — battery-friendly, no background
-  location permission.
+Two parts, one Supabase backend:
 
-Stack: **Android native (Kotlin + Jetpack Compose)** · **Supabase (Postgres + RPC)** ·
-**Google Play Services Fused Location**.
+1. **Android app** (Kotlin + Compose) — for **field staff**. Mobile-number login, auto geofenced
+   check-in/out, and periodic presence re-verification. **Staff-only** (no admin here).
+2. **Web admin dashboard** (no-build static site) — for **district administration**. Email/password
+   login. View all attendance logs, manage kendras & staff, assign duty locations, and **bulk
+   enroll from Excel**.
+
+Stack: Android native · Supabase (Postgres + RPC + Auth) · plain HTML/JS + Tailwind + SheetJS for
+the dashboard · GitHub Actions to build the APK and deploy the dashboard.
 
 ---
 
-## How it works
+## How attendance works
 
 ```
 Staff opens app → types registered mobile → login_by_mobile() returns the staff
@@ -31,147 +24,182 @@ Staff opens app → types registered mobile → login_by_mobile() returns the st
         │
         ▼
 App streams GPS (foreground) → AttendanceRules.decide()
-        │
         ├─ not checked in + inside an allowed kendra + within window → record_check_in()
-        ├─ checked in + every verify_interval_min                     → record_pulse()  (present/absent)
+        ├─ checked in + every verify_interval_min                     → record_pulse() (present/absent)
         └─ checked in + at/after day_end                              → record_check_out()
-        │
         ▼
-Server re-validates the geofence distance + IST time window before writing anything
+Server re-validates the geofence distance + IST window before writing anything
 ```
 
-The geofence math, time windows and pulse logging are enforced **server-side** in Postgres, so a
-tampered client cannot fake presence at a kendra it is not physically at.
+Presence pulses are the anti-absenteeism trail: arriving-then-leaving, or never staying, shows up
+as absent pulses. Geofence math and windows are enforced server-side.
 
 ---
 
 ## 1. Set up Supabase
 
-1. Create a project at https://supabase.com (or use an existing one).
-2. Open **SQL Editor → New query**.
-3. Paste the **entire** contents of [`supabase/schema.sql`](supabase/schema.sql) and **Run**.
-   One re-runnable transaction: creates `kendras`, `staff`, `staff_kendra`, `attendance`,
-   `presence_pulses`, all RPC functions, locks tables with RLS, and grants execute to anon.
-4. The verification `SELECT`s at the bottom should list all 5 tables and all 13 functions.
+Run **both** migrations in the Supabase **SQL Editor** (New query → paste → Run), in order:
 
-### Create your first admin + kendra
+1. [`supabase/schema.sql`](supabase/schema.sql) — tables + staff/attendance RPCs.
+2. [`supabase/admin_dashboard.sql`](supabase/admin_dashboard.sql) — admin auth allow-list +
+   secured dashboard RPCs (also drops the old insecure admin functions).
 
-The Admin screen can create kendras and enroll staff, but you need **one admin row** to log in the
-first time. In the SQL Editor, edit and run the seed block at the bottom of `schema.sql`
-(it is commented out). Set a real kendra `name`, `latitude`, `longitude` (exact coordinates from
-Google Maps at the kendra), `radius_m`, and the admin's real `mobile_number`. Then run just that
-block.
+Both are re-runnable. Verification `SELECT`s at the bottom of each confirm success.
 
-Log into the app with that mobile number → Admin screen → add kendras, enroll staff (choose
-fixed/multi), and assign each person their allowed kendra(s).
+### Create your first kendra
+
+The dashboard can create kendras, but you need at least one to assign staff to. Either create it
+from the dashboard after logging in (below), or seed one via the commented block at the bottom of
+`schema.sql` (edit name + real lat/long from Google Maps at the kendra).
+
+### Create your first admin (dashboard login)
+
+Admins log in with **email + password** via Supabase Auth, then must be allow-listed:
+
+1. Supabase → **Authentication → Users → Add user** → enter an email + password, tick
+   **Auto Confirm User** → create.
+2. Copy that user's **User UID**.
+3. In the SQL Editor run (replace the UUID and name):
+   ```sql
+   insert into public.admins (auth_id, full_name)
+   values ('00000000-0000-0000-0000-000000000000', 'District Admin')
+   on conflict (auth_id) do nothing;
+   ```
+4. Log into the dashboard with that email + password.
+
+> You create the admin password yourself in the Supabase console — it never passes through the repo
+> or this tooling.
 
 ---
 
-## 2. Configure the Android app
+## 2. Android app (field staff)
 
-Your Supabase URL and anon key are **secrets you fill in yourself** — never committed.
+### Configure
+Copy `local.properties.example` → `local.properties` and fill `SUPABASE_URL` + `SUPABASE_ANON_KEY`
+(from Supabase → Project Settings → API). `local.properties` is git-ignored.
 
-1. Copy `local.properties.example` to `local.properties` in the project root.
-2. From Supabase → **Project Settings → API**, copy the **Project URL** and **anon public** key into
-   `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
-3. Leave `sdk.dir` as-is (Android Studio fills it in).
+### Build without Android Studio (low-spec friendly)
+You don't need the IDE. Two options:
 
-`local.properties` is git-ignored; Gradle reads it into `BuildConfig`. If the values are missing,
-the login screen shows a clear "Supabase not configured" banner instead of crashing.
+- **Cloud (recommended):** push to GitHub — the **Build APK** workflow compiles it and attaches a
+  downloadable `app-debug-apk` artifact. See section 4.
+- **Local CLI:** install JDK 17 + Android command-line SDK + Gradle, then `gradle assembleDebug`.
+  APK at `app/build/outputs/apk/debug/app-debug.apk`. Install with
+  `adb install -r <apk>` or sideload the file. Needs a **physical phone with GPS**.
+
+Staff log in with the mobile number an admin enrolled. Admins who log into the phone app see a
+notice pointing them to the web dashboard.
 
 ---
 
-## 3. Build & run
+## 3. Web admin dashboard
 
-1. Open the project folder in **Android Studio** (Ladybug or newer).
-2. Let it sync Gradle (downloads the wrapper + dependencies).
-3. Run on a **physical device** (geofencing needs a real GPS fix).
-4. Log in with an enrolled mobile number.
+A no-build static site in [`dashboard/`](dashboard). Features:
 
-Minimum SDK 24 (Android 7.0), target SDK 35.
+- **Overview** — present / absent / late / checked-out today, total staff & kendras.
+- **Attendance logs** — filter by date range, kendra, and name/mobile; shows check-in/out, status,
+  and per-day present/absent pulse counts.
+- **Staff** — enroll one at a time, and **Assign** allowed kendra(s) (fixed = one, multi = several).
+- **Kendras** — create with lat/long, radius, arrival window, day-end, verify interval.
+- **Bulk upload** — upload an `.xlsx`, preview, and enroll many staff at once with per-row results.
+  A **Download template** button generates the sheet.
+
+### Excel template columns
+| Column | Values |
+|---|---|
+| Full name | text |
+| Mobile number | 10-digit |
+| Role | `staff` or `admin` |
+| Duty type | `fixed` or `multi` |
+| Kendra name(s) | existing kendra name; comma-separated for `multi` |
+
+Kendras are matched **by name** and must already exist. Rows with an unknown kendra or a duplicate
+mobile are reported as failures; the rest still import.
+
+### Run locally
+Fill your URL + anon key into `dashboard/config.js` (replacing the `__SUPABASE_URL__` /
+`__SUPABASE_ANON_KEY__` placeholders), then open `dashboard/index.html` in a browser (a simple
+static server works best, e.g. `python -m http.server` in the `dashboard/` folder).
+
+---
+
+## 4. Deploy (GitHub Actions)
+
+Push this folder to a GitHub repo. Two workflows run automatically:
+
+- **[.github/workflows/build-apk.yml](.github/workflows/build-apk.yml)** — builds the Android
+  `app-debug.apk`; download it from the run's **Artifacts**.
+- **[.github/workflows/deploy-dashboard.yml](.github/workflows/deploy-dashboard.yml)** — deploys
+  `dashboard/` to **GitHub Pages**, injecting your Supabase URL + anon key from secrets at deploy
+  time (so keys never sit in the repo).
+
+### One-time repo setup
+1. **Settings → Secrets and variables → Actions → New repository secret**, add:
+   - `SUPABASE_URL`
+   - `SUPABASE_ANON_KEY`
+   (Both workflows reuse these. The anon key is a *publishable* key — safe in the browser because
+   the admin RPCs require an authenticated admin session.)
+2. **Settings → Pages → Build and deployment → Source = "GitHub Actions"**.
+3. Push. The dashboard URL appears on the deploy run (also `https://<username>.github.io/<repo>/`).
 
 ---
 
 ## Project layout
 
 ```
-supabase/schema.sql                     # backend migration (tables + RPC + RLS)
+supabase/schema.sql              # base: tables + staff/attendance RPCs
+supabase/admin_dashboard.sql     # admin auth + secured dashboard RPCs + bulk enroll
+dashboard/                       # no-build web admin (index.html, app.js, config.js, styles.css)
 app/src/main/java/com/vsk/attendance/
-  MainActivity.kt                       # entry, permission gate, screen routing
-  data/Models.kt                        # serializable DTOs (Kendra, Staff, pulses…)
-  data/SupabaseApi.kt                   # Ktor client → Supabase RPC
-  data/SessionStore.kt                  # SharedPreferences session (staff + allowed kendras)
-  util/GeoUtils.kt                      # Haversine + IST clock helpers
-  location/LocationHelper.kt            # Fused Location (one-shot + stream)
-  location/AttendanceRules.kt           # multi-kendra + pulse decision engine
-  ui/MainViewModel.kt                   # state, duty loop, admin actions
-  ui/LoginScreen.kt / AttendanceScreen.kt / AdminScreen.kt
-  ui/theme/Theme.kt
+  MainActivity.kt                # entry, permission gate, staff-only routing
+  data/{Models,SupabaseApi,SessionStore}.kt
+  util/GeoUtils.kt               # Haversine + IST clock
+  location/{LocationHelper,AttendanceRules}.kt
+  ui/{MainViewModel,LoginScreen,AttendanceScreen}.kt + theme/
+.github/workflows/               # build-apk.yml, deploy-dashboard.yml
 ```
 
 ---
 
-## Per-kendra settings (configurable in the Admin screen)
+## Per-kendra settings
+| Setting | Default | Meaning |
+|---|---|---|
+| `radius_m` | 100 | Geofence radius (metres) |
+| `check_in_start` / `check_in_end` | 08:00 / 10:00 | IST arrival window |
+| `day_end` | 18:00 | IST auto check-out deadline |
+| `verify_interval_min` | 30 | Presence re-verification interval |
 
-| Setting               | Default | Meaning                                              |
-|-----------------------|---------|------------------------------------------------------|
-| `radius_m`            | 100     | Geofence radius around the kendra lat/long (metres)  |
-| `check_in_start`      | 08:00   | IST arrival window opens                             |
-| `check_in_end`        | 10:00   | IST arrival window closes                            |
-| `day_end`             | 18:00   | IST auto check-out deadline                          |
-| `verify_interval_min` | 30      | How often presence is re-verified during duty        |
-
-One attendance row per staff per IST day. Check-in more than 30 min after `check_in_start` is
-flagged `late`. Every re-verification is stored in `presence_pulses` (present/absent + distance),
-so a full day's presence is auditable, not just the arrival time.
-
-### Staff duty types
-
-| duty_type | Meaning                                                        |
-|-----------|----------------------------------------------------------------|
-| `fixed`   | Tied to exactly one kendra (assigning a new one replaces it).   |
-| `multi`   | May mark attendance from any of several assigned kendras.       |
+Staff `duty_type`: **fixed** = exactly one kendra (assigning replaces it); **multi** = several
+allowed kendras.
 
 ---
 
-## Reporting / monitoring absenteeism
-
-The `presence_pulses` table is the evidence trail. Example query for a staff member's day:
-
+## Monitoring absenteeism
+The `presence_pulses` table is the evidence trail:
 ```sql
-select to_char(at at time zone 'Asia/Kolkata','HH24:MI') as time_ist,
-       inside, distance_m
+select to_char(at at time zone 'Asia/Kolkata','HH24:MI') as time_ist, inside, distance_m
 from presence_pulses
-where staff_id = '<staff-uuid>'
-  and day = current_date
+where staff_id = '<staff-uuid>' and day = current_date
 order by at;
 ```
-
-A day with an early present pulse followed by many absent pulses = "came, then left."
-No pulses at all + no check-in = "never went to duty." You can build an admin dashboard on this
-later (a monitoring web view, or an officer-review screen) — say the word.
+Early present pulse + many absent pulses = "came, then left." No check-in + no pulses = "never went."
 
 ---
 
-## Security note (read before real deployment)
-
-**Login is mobile-number-only, by design** (that's the requested flow). This is **weak**: anyone
-who knows a staff member's registered number can log in as them. The geofence + server-side
-validation stops *fake-location* attendance, and pulses prove continued presence — but they do not
-protect the account itself. Admin functions trust a passed-in admin id, which is likewise spoofable.
-
-For anything beyond a pilot, add **OTP verification** on the mobile number:
-- Supabase Phone Auth (Twilio/MessageBird), or
-- an OTP table + `verify_otp()` RPC issuing a real per-user JWT so RLS can scope each user to their
-  own rows.
-
-I can add the OTP layer around the existing `login_by_mobile` flow whenever you want.
+## Security model
+- **Field staff (Android):** mobile-number-only login by design. The geofence + server-side
+  validation stop fake-location attendance, and pulses prove continued presence — but the account
+  itself is not strongly authenticated. Add OTP (Supabase Phone Auth or an OTP table + per-user
+  JWT) for production hardening.
+- **Admins (web):** email/password via Supabase Auth, and every admin RPC calls `assert_admin()`
+  which checks `auth.uid()` against the `admins` allow-list. The old spoofable `p_admin_id`
+  functions were dropped. RLS locks all tables; access is only through SECURITY DEFINER functions.
+- GPS can be spoofed on a rooted device; for high assurance add Play Integrity attestation.
 
 ---
 
 ## Notes & limits
-
-- Foreground only: tracking runs while the app is open. Working with the app closed needs Android
+- Attendance tracking is **foreground only** (app open). Working with the app closed needs Android
   background-location permission + a foreground service + battery-optimization handling.
-- GPS can be spoofed with mock-location apps; server-side geofencing raises the bar but is not
-  tamper-proof on a rooted device. For high assurance add Play Integrity attestation.
+- The code has not been compiled in this environment; the first APK build happens in CI or on your
+  machine. Fix any version nits that surface there.

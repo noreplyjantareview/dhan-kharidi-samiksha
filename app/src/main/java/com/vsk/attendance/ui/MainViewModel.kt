@@ -6,7 +6,6 @@ import androidx.lifecycle.viewModelScope
 import com.vsk.attendance.data.Kendra
 import com.vsk.attendance.data.SessionStore
 import com.vsk.attendance.data.Staff
-import com.vsk.attendance.data.StaffSummary
 import com.vsk.attendance.data.SupabaseApi
 import com.vsk.attendance.location.AttendanceAction
 import com.vsk.attendance.location.AttendanceRules
@@ -58,18 +57,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _configError = MutableStateFlow<String?>(null)
     val configError: StateFlow<String?> = _configError.asStateFlow()
-
-    // Admin
-    private val _allKendras = MutableStateFlow<List<Kendra>>(emptyList())
-    val allKendras: StateFlow<List<Kendra>> = _allKendras.asStateFlow()
-    private val _allStaff = MutableStateFlow<List<StaffSummary>>(emptyList())
-    val allStaff: StateFlow<List<StaffSummary>> = _allStaff.asStateFlow()
-    private val _adminMsg = MutableStateFlow<String?>(null)
-    val adminMsg: StateFlow<String?> = _adminMsg.asStateFlow()
-    private val _assignStaff = MutableStateFlow<StaffSummary?>(null)
-    val assignStaff: StateFlow<StaffSummary?> = _assignStaff.asStateFlow()
-    private val _assignedKendraIds = MutableStateFlow<Set<String>>(emptySet())
-    val assignedKendraIds: StateFlow<Set<String>> = _assignedKendraIds.asStateFlow()
 
     private var attendanceJob: Job? = null
     private var activeKendraId: String? = null
@@ -160,9 +147,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         message = "Location error: ${e.message}", running = false
                     )
                 }
-                .collect { loc ->
-                    onFix(s.id, allowed, loc.latitude, loc.longitude)
-                }
+                .collect { loc -> onFix(s.id, allowed, loc.latitude, loc.longitude) }
         }
     }
 
@@ -252,85 +237,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         attendanceJob = null
         _attendance.value = _attendance.value.copy(running = false)
     }
-
-    // ------------------------------------------------------------------
-    // Admin
-    // ------------------------------------------------------------------
-    fun loadAdminData() {
-        val admin = _staff.value ?: return
-        viewModelScope.launch {
-            try {
-                _allKendras.value = api.listKendras(admin.id).rows
-                _allStaff.value = api.listStaff(admin.id).rows
-            } catch (e: Exception) { _adminMsg.value = e.message ?: "Failed to load." }
-        }
-    }
-
-    fun createKendra(
-        name: String, lat: String, lon: String, radius: String,
-        inStart: String, inEnd: String, dayEnd: String, verifyInterval: String
-    ) {
-        val admin = _staff.value ?: return
-        val la = lat.toDoubleOrNull(); val lo = lon.toDoubleOrNull()
-        if (name.isBlank() || la == null || lo == null) {
-            _adminMsg.value = "Name, latitude and longitude are required."; return
-        }
-        viewModelScope.launch {
-            try {
-                val res = api.createKendra(
-                    admin.id, name.trim(), la, lo, radius.toIntOrNull() ?: 100,
-                    inStart, inEnd, dayEnd, verifyInterval.toIntOrNull() ?: 30
-                )
-                _adminMsg.value = if (res.ok) "Kendra added." else (res.error ?: "Failed.")
-                loadAdminData()
-            } catch (e: Exception) { _adminMsg.value = e.message ?: "Failed." }
-        }
-    }
-
-    fun enrollStaff(name: String, mobile: String, role: String, dutyType: String) {
-        val admin = _staff.value ?: return
-        if (name.isBlank() || mobile.isBlank()) {
-            _adminMsg.value = "Name and mobile number are required."; return
-        }
-        viewModelScope.launch {
-            try {
-                val res = api.enrollStaff(admin.id, name.trim(), mobile.trim(), role, dutyType)
-                _adminMsg.value = if (res.ok) "Staff enrolled. Now assign their duty kendra(s)."
-                                    else (res.error ?: "Failed.")
-                loadAdminData()
-            } catch (e: Exception) { _adminMsg.value = e.message ?: "Failed." }
-        }
-    }
-
-    fun openAssign(staffRow: StaffSummary) {
-        val admin = _staff.value ?: return
-        _assignStaff.value = staffRow
-        viewModelScope.launch {
-            try {
-                _assignedKendraIds.value = api.staffKendras(admin.id, staffRow.id).kendraIds.toSet()
-            } catch (e: Exception) { _adminMsg.value = e.message ?: "Failed to load assignments." }
-        }
-    }
-
-    fun toggleKendra(kendraId: String, allowed: Boolean) {
-        val admin = _staff.value ?: return
-        val target = _assignStaff.value ?: return
-        viewModelScope.launch {
-            try {
-                val res = api.assignKendra(admin.id, target.id, kendraId, allowed)
-                if (res.ok) {
-                    _assignedKendraIds.value = if (allowed) {
-                        if (target.dutyType == "fixed") setOf(kendraId)
-                        else _assignedKendraIds.value + kendraId
-                    } else _assignedKendraIds.value - kendraId
-                    loadAdminData()
-                } else _adminMsg.value = res.error ?: "Failed."
-            } catch (e: Exception) { _adminMsg.value = e.message ?: "Failed." }
-        }
-    }
-
-    fun clearAssign() { _assignStaff.value = null; _assignedKendraIds.value = emptySet() }
-    fun clearAdminMsg() { _adminMsg.value = null }
 
     override fun onCleared() {
         super.onCleared()

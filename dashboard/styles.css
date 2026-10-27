@@ -1,0 +1,34 @@
+:root { color-scheme: light; }
+body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+
+/* Simple spinner */
+.spinner {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.4); border-top-color: #fff;
+  animation: spin .7s linear infinite; display: inline-block;
+}
+.spinner-dark { border-color: rgba(0,0,0,.2); border-top-color: #1565C0; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Toasts */
+#toasts { position: fixed; top: 16px; right: 16px; z-index: 50; display: flex; flex-direction: column; gap: 8px; }
+.toast {
+  min-width: 240px; max-width: 360px; padding: 12px 14px; border-radius: 10px;
+  color: #fff; font-size: 14px; box-shadow: 0 6px 20px rgba(0,0,0,.18);
+  animation: slidein .18s ease-out;
+}
+.toast.ok { background: #16a34a; }
+.toast.err { background: #dc2626; }
+.toast.info { background: #2563eb; }
+@keyframes slidein { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
+
+/* Page veil while loading */
+#veil { position: fixed; inset: 0; background: rgba(255,255,255,.6); display: none;
+        align-items: center; justify-content: center; z-index: 40; }
+#veil.on { display: flex; }
+
+.nav-link.active { background: #e8f0fe; color: #1565C0; font-weight: 600; }
+table.grid { border-collapse: collapse; width: 100%; }
+table.grid th, table.grid td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eef1f5; font-size: 13px; }
+table.grid th { color: #6b7280; font-weight: 600; background: #fafbfc; position: sticky; top: 0; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
