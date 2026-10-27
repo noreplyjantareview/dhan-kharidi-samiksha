@@ -1,0 +1,9 @@
+# Copy this file to `local.properties` (same folder) and fill in YOUR values.
+# local.properties is machine-specific and should never be committed.
+#
+# sdk.dir is written automatically by Android Studio.
+sdk.dir=
+
+# From Supabase dashboard -> Project Settings -> API
+SUPABASE_URL=https://YOUR-PROJECT-REF.supabase.co
+SUPABASE_ANON_KEY=YOUR-ANON-PUBLIC-KEY
