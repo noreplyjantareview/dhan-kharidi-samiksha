@@ -97,6 +97,18 @@ as absent pulses. Geofence math and windows are enforced server-side.
   unauthenticated attendance/template RPCs are revoked. Deploy migration 9, dashboard and APK together:
   older APKs intentionally stop working after this migration.
 
+**Capture timing (retuned after field timeouts):** a registration or duty check runs on a rolling
+policy rather than a strict per-frame deadline, because mid-range phones need up to ~1.5 s per frame.
+
+- Two frames are only accepted 350 ms apart, and the whole check must finish within 120 seconds.
+- Quality rejections (move closer, hold still, lighting) no longer restart a check in progress.
+  Previously any 1.8 s of rejections wiped the collected samples, so registration could not finish.
+- Dropped detections and liveness rejections restart only after four and three consecutive frames
+  respectively; a person switching in front of the camera or a second face still resets immediately,
+  as does four seconds with no frame at all.
+- A duty check still has to beat the 90-second challenge. If it expires, the screen asks for a new
+  face capture; the timeout was not raised to cover this, because the nonce TTL is the security bound.
+
 **Accuracy and liveness limits:** this is not Aadhaar FaceRD, certified PAD or a measured equivalent.
 The initial SFace cosine threshold is 0.363; MiniFASNet live probability must be at least 0.80.
 These are provisional operating points, not accuracy percentages. Validate on the actual phones,

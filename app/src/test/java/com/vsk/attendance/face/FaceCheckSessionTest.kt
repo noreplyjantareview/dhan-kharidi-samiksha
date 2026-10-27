@@ -28,9 +28,13 @@ class FaceCheckSessionTest {
             return session.accept(vector, yaw, now)
         }
 
-        fun reject(identityFailure: Boolean = false, delta: Long = 350, message: String = "Invalid frame"): FaceCheckProgress {
+        fun reject(
+            failure: FaceInterruption = FaceInterruption.Quality,
+            delta: Long = 350,
+            message: String = "Invalid frame"
+        ): FaceCheckProgress {
             now += delta
-            return session.rejected(message, now, identityFailure)
+            return session.rejected(message, now, failure)
         }
 
         fun enterFinalStage() {
@@ -154,7 +158,7 @@ class FaceCheckSessionTest {
             driver.frame()
             driver.frame()
             val sign = if (turn == "left") 1 else -1
-            for (yaw in listOf(0.10f, 0.17f, 0.51f, 0.80f)) {
+            for (yaw in listOf(0.10f, 0.14f, 0.56f, 0.80f)) {
                 repeat(3) { assertFalse(driver.frame(yaw * sign).complete) }
             }
             repeat(3) { assertFalse(driver.frame().complete) }
@@ -168,7 +172,7 @@ class FaceCheckSessionTest {
         val driver = Driver()
         driver.frame(0.1f)
         driver.frame(0.1f)
-        repeat(3) { assertFalse(driver.frame(0.25f).complete) }
+        repeat(3) { assertFalse(driver.frame(0.24f).complete) }
         driver.frame(0.35f)
         driver.frame(0.35f)
         assertFalse(driver.frame(0.1f).complete)
@@ -278,14 +282,14 @@ class FaceCheckSessionTest {
         assertEquals(0, result.accepted)
     }
 
-    @Test fun noFaceMultipleFacesAndPadInterruptionsResetEveryPartialChallenge() {
+    @Test fun multipleFacesAndIdentitySignalsResetEveryPartialChallenge() {
         for (enrolling in listOf(true, false)) {
-            for (message in listOf("No face", "Multiple faces", "PAD rejected")) {
+            for (message in listOf("Multiple faces", "Wrong person")) {
                 for (count in listOf(1, 4, 6)) {
                     val driver = Driver(enrolling)
                     val yaws = listOf(0f, 0f, driver.turnYaw, driver.turnYaw, 0f, 0f)
                     repeat(count) { driver.frame(yaws[it]) }
-                    val rejected = driver.reject(identityFailure = true, delta = 50, message = message)
+                    val rejected = driver.reject(FaceInterruption.Identity, delta = 50, message = message)
                     assertEquals(message, rejected.message)
                     assertEquals(0, rejected.accepted)
                     assertFalse(rejected.complete)
@@ -294,6 +298,74 @@ class FaceCheckSessionTest {
                 }
             }
         }
+    }
+
+    @Test fun transientFaceLossAndPadRejectionsKeepCollectedEvidence() {
+        for (failure in listOf(FaceInterruption.FaceLost, FaceInterruption.Pad)) {
+            for (enrolling in listOf(true, false)) {
+                val driver = Driver(enrolling)
+                driver.enterFinalStage()
+                driver.frame()
+                val stalled = driver.reject(failure, message = "Transient $failure")
+                assertFalse(stalled.complete)
+                assertNull(stalled.template)
+                if (enrolling) assertEquals(3, stalled.accepted)
+                assertFalse(driver.frame().complete)
+                val result = driver.frame()
+                assertTrue("One dropped frame must not restart the challenge", result.complete)
+                if (enrolling) assertEquals(5, FaceTemplate.decode(result.template)!!.samples.size)
+            }
+        }
+    }
+
+    @Test fun sustainedFaceLossResetsAfterFourConsecutiveFrames() {
+        for (enrolling in listOf(true, false)) {
+            val surviving = Driver(enrolling)
+            surviving.enterFinalStage()
+            surviving.frame()
+            repeat(FaceCheckSession.FACE_LOST_FRAMES - 1) { surviving.reject(FaceInterruption.FaceLost) }
+            assertFalse(surviving.frame().complete)
+            assertTrue(surviving.frame().complete)
+
+            val resetting = Driver(enrolling)
+            resetting.enterFinalStage()
+            resetting.frame()
+            var last: FaceCheckProgress? = null
+            repeat(FaceCheckSession.FACE_LOST_FRAMES) { last = resetting.reject(FaceInterruption.FaceLost) }
+            assertEquals(0, last!!.accepted)
+            val restarted = resetting.frame()
+            assertFalse(restarted.complete)
+            if (enrolling) assertEquals(1, restarted.accepted)
+        }
+    }
+
+    @Test fun sustainedPadRejectionsResetAfterThreeConsecutiveFrames() {
+        for (enrolling in listOf(true, false)) {
+            val driver = Driver(enrolling)
+            driver.enterFinalStage()
+            driver.frame()
+            repeat(FaceCheckSession.PAD_FRAMES - 1) {
+                val surviving = driver.reject(FaceInterruption.Pad)
+                assertFalse(surviving.complete)
+                if (enrolling) assertEquals(3, surviving.accepted)
+            }
+            assertEquals(0, driver.reject(FaceInterruption.Pad).accepted)
+            val restarted = driver.frame()
+            assertFalse(restarted.complete)
+            if (enrolling) assertEquals(1, restarted.accepted)
+        }
+    }
+
+    @Test fun faceLostAndPadStreaksDoNotLeakIntoEachOther() {
+        val driver = Driver()
+        driver.enterFinalStage()
+        driver.frame()
+        repeat(FaceCheckSession.FACE_LOST_FRAMES - 1) { driver.reject(FaceInterruption.FaceLost) }
+        repeat(FaceCheckSession.PAD_FRAMES - 1) { driver.reject(FaceInterruption.Pad) }
+        driver.reject(FaceInterruption.FaceLost)
+        driver.reject(FaceInterruption.Pad)
+        assertEquals(4, driver.frame().accepted)
+        assertTrue(driver.frame().complete)
     }
 
     @Test fun rejectedQualityFrameNeverAddsSamplesOrCompletes() {
@@ -306,23 +378,41 @@ class FaceCheckSessionTest {
         assertNull(result.template)
     }
 
-    @Test fun prolongedQualityRejectionsResetContinuity() {
-        val driver = Driver()
-        driver.enterFinalStage()
-        driver.frame()
-        driver.frame()
-        repeat(5) { assertFalse(driver.reject(delta = 350).complete) }
-        assertEquals(0, driver.reject(delta = 51).accepted)
-        driver.challenge()
-    }
-
-    @Test fun continuityGapLongerThan1800MillisecondsRestartsChallenge() {
+    @Test fun prolongedQualityRejectionsDoNotErodeContinuity() {
         for (enrolling in listOf(true, false)) {
             val driver = Driver(enrolling)
             driver.enterFinalStage()
             driver.frame()
             driver.frame()
-            val next = driver.frame(delta = 1801)
+            // Real phones take a second or more per frame while the user settles into position.
+            repeat(8) { assertFalse(driver.reject(delta = 900).complete) }
+            val result = driver.frame(delta = 900)
+            assertEquals(5, result.accepted)
+            assertTrue("Quality rejections must not restart a challenge in progress", result.complete)
+        }
+    }
+
+    @Test fun slowPhoneCadenceStillCompletesWithoutRestarting() {
+        for (enrolling in listOf(true, false)) {
+            val driver = Driver(enrolling)
+            val frames = (1..7).map {
+                driver.frame(if (it in 3..4) driver.turnYaw else 0f, delta = 1500)
+            }
+            assertTrue(frames.dropLast(1).none { it.complete })
+            val result = frames.last()
+            assertTrue(result.complete)
+            assertEquals(5, result.accepted)
+            if (enrolling) assertEquals(5, FaceTemplate.decode(result.template)!!.samples.size)
+        }
+    }
+
+    @Test fun continuityGapLongerThanPresenceGapRestartsChallenge() {
+        for (enrolling in listOf(true, false)) {
+            val driver = Driver(enrolling)
+            driver.enterFinalStage()
+            driver.frame()
+            driver.frame()
+            val next = driver.frame(delta = FaceCheckSession.PRESENCE_GAP_MS + 1)
             assertFalse(next.complete)
             assertEquals(1, next.accepted)
             driver.frame()
@@ -332,18 +422,18 @@ class FaceCheckSessionTest {
         }
     }
 
-    @Test fun continuityGapOfExactly1800MillisecondsIsAllowed() {
+    @Test fun continuityGapOfExactlyThePresenceGapIsAllowed() {
         val driver = Driver()
         driver.enterFinalStage()
         driver.frame()
         driver.frame()
-        assertTrue(driver.frame(delta = 1800).complete)
+        assertTrue(driver.frame(delta = FaceCheckSession.PRESENCE_GAP_MS).complete)
     }
 
     @Test fun timeoutCannotCompleteEvenWhenOnlyOneFrameRemains() {
         for (enrolling in listOf(true, false)) {
             val driver = Driver(enrolling)
-            driver.now = driver.startedAt + 65000 - 2100
+            driver.now = driver.startedAt + FaceCheckSession.TIMEOUT_MS - 2100
             driver.enterFinalStage()
             driver.frame()
             driver.frame()

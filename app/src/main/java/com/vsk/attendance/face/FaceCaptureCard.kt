@@ -173,7 +173,7 @@ private class FaceAnalyzer(
             try {
                 val now = SystemClock.elapsedRealtime()
                 session = FaceCheckSession(enrolling, template, turn, now)
-                deadline = now + 65000
+                deadline = now + FaceCheckSession.TIMEOUT_MS
                 post { onProgress("Look straight at the camera and hold still") }
             } catch (e: IllegalArgumentException) {
                 fail(e.message ?: "Face registration is not current. Ask your administrator for a reset.")
@@ -201,11 +201,11 @@ private class FaceAnalyzer(
             )
             val observation = checkNotNull(engine).analyze(upright)
             val progress = if (observation.issue != null) {
-                current.rejected(observation.issue, now, observation.identityInterrupted)
+                current.rejected(observation.issue, now, observation.interruption)
             } else {
                 current.accept(observation.vector, observation.yaw, now)
             }
-            post { onProgress(progress.message) }
+            if (!progress.complete) post { onProgress(progress.message + sampleHint(progress.accepted)) }
             if (progress.complete) {
                 running.set(false)
                 session = null
@@ -222,6 +222,9 @@ private class FaceAnalyzer(
             image.close()
         }
     }
+
+    private fun sampleHint(accepted: Int): String =
+        if (enrolling && accepted in 1..4) " · $accepted/5 samples" else ""
 
     private fun fail(message: String) {
         running.set(false)
