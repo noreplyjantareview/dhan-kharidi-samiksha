@@ -111,17 +111,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ------------------------------------------------------------------
     fun startAttendance() {
         val s = _staff.value ?: return
-        val allowed = _kendras.value
-        if (allowed.isEmpty()) {
-            _attendance.value = AttendanceUi(
-                message = "No duty kendra assigned. Ask your admin to assign you a kendra.",
-                clock = GeoUtils.nowClockIST()
-            )
-            return
-        }
         attendanceJob?.cancel()
 
-        viewModelScope.launch {
+        attendanceJob = viewModelScope.launch {
+            // Re-fetch the allowed kendras: admin may have moved/edited them since login.
+            try {
+                val res = api.login(s.mobileNumber)
+                if (res.ok && res.staff != null) {
+                    session.save(res.staff, res.kendras)
+                    _staff.value = res.staff
+                    _kendras.value = res.kendras
+                }
+            } catch (_: Exception) { }
+
+            val allowed = _kendras.value
+            if (allowed.isEmpty()) {
+                _attendance.value = AttendanceUi(
+                    message = "No duty kendra assigned. Ask your admin to assign you a kendra.",
+                    clock = GeoUtils.nowClockIST()
+                )
+                return@launch
+            }
+
             try {
                 val t = api.today(s.id)
                 activeKendraId = null
@@ -138,9 +149,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 lastPulseMillis = System.currentTimeMillis()
             } catch (_: Exception) { }
-        }
 
-        attendanceJob = viewModelScope.launch {
             locator.locationUpdates(intervalMs = 15_000L)
                 .catch { e ->
                     _attendance.value = _attendance.value.copy(

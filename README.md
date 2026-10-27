@@ -38,13 +38,15 @@ as absent pulses. Geofence math and windows are enforced server-side.
 
 ## 1. Set up Supabase
 
-Run **both** migrations in the Supabase **SQL Editor** (New query → paste → Run), in order:
+Run **all** migrations in the Supabase **SQL Editor** (New query → paste → Run), in order:
 
 1. [`supabase/schema.sql`](supabase/schema.sql) — tables + staff/attendance RPCs.
 2. [`supabase/admin_dashboard.sql`](supabase/admin_dashboard.sql) — admin auth allow-list +
    secured dashboard RPCs (also drops the old insecure admin functions).
+3. [`supabase/kendra_edit.sql`](supabase/kendra_edit.sql) — `admin_update_kendra()` so kendras
+   (lat/long, radius, time windows) can be edited from the dashboard.
 
-Both are re-runnable. Verification `SELECT`s at the bottom of each confirm success.
+All are re-runnable. Verification `SELECT`s at the bottom of each confirm success.
 
 ### Create your first kendra
 
@@ -100,7 +102,9 @@ A no-build static site in [`dashboard/`](dashboard). Features:
 - **Attendance logs** — filter by date range, kendra, and name/mobile; shows check-in/out, status,
   and per-day present/absent pulse counts.
 - **Staff** — enroll one at a time, and **Assign** allowed kendra(s) (fixed = one, multi = several).
-- **Kendras** — create with lat/long, radius, arrival window, day-end, verify interval.
+- **Kendras** — create with lat/long, radius, arrival window, day-end, verify interval; **Edit**
+  any kendra later (e.g. correct its lat/long). Staff phones pick up the new location the next
+  time they open the app.
 - **Bulk upload** — upload an `.xlsx`, preview, and enroll many staff at once with per-row results.
   A **Download template** button generates the sheet.
 
@@ -149,6 +153,7 @@ Push this folder to a GitHub repo. Two workflows run automatically:
 ```
 supabase/schema.sql              # base: tables + staff/attendance RPCs
 supabase/admin_dashboard.sql     # admin auth + secured dashboard RPCs + bulk enroll
+supabase/kendra_edit.sql         # admin_update_kendra() — edit lat/long & windows
 dashboard/                       # no-build web admin (index.html, app.js, config.js, styles.css)
 app/src/main/java/com/vsk/attendance/
   MainActivity.kt                # entry, permission gate, staff-only routing

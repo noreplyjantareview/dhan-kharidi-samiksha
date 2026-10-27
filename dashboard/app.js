@@ -225,13 +225,16 @@
     KENDRAS = (data && data.rows) || [];
     if (!KENDRAS.length) { $("#kendraTable").innerHTML = `<tr><td class="p-6 text-slate-500">No kendras yet.</td></tr>`; return; }
     $("#kendraTable").innerHTML = `
-      <thead><tr><th>Name</th><th>Lat</th><th>Long</th><th>Radius</th><th>Window</th><th>Day ends</th><th>Verify</th></tr></thead>
+      <thead><tr><th>Name</th><th>Lat</th><th>Long</th><th>Radius</th><th>Window</th><th>Day ends</th><th>Verify</th><th></th></tr></thead>
       <tbody>${KENDRAS.map((k) => `
         <tr>
           <td>${esc(k.name)}</td><td>${k.latitude}</td><td>${k.longitude}</td>
           <td>${k.radius_m} m</td><td>${esc(k.check_in_start)}–${esc(k.check_in_end)}</td>
           <td>${esc(k.day_end)}</td><td>every ${k.verify_interval_min} min</td>
+          <td><button data-kedit="${k.id}" class="text-blue-700 text-sm font-semibold hover:underline">Edit</button></td>
         </tr>`).join("")}</tbody>`;
+    $$("#kendraTable [data-kedit]").forEach((b) =>
+      b.addEventListener("click", () => openKendraEdit(b.dataset.kedit)));
   }
 
   $("#kendraForm").addEventListener("submit", async (e) => {
@@ -253,6 +256,53 @@
     if (data && !data.ok) { toast(data.error || "Failed", "err"); return; }
     toast("Kendra created", "ok");
     e.target.reset();
+    await loadKendras();
+  });
+
+  // ---------- edit kendra modal ----------
+  let currentKendraEdit = null;
+  function openKendraEdit(id) {
+    const k = KENDRAS.find((x) => x.id === id);
+    if (!k) return;
+    currentKendraEdit = id;
+    $("#keName").value = k.name;
+    $("#keLat").value = k.latitude;
+    $("#keLon").value = k.longitude;
+    $("#keRadius").value = k.radius_m;
+    $("#keVerify").value = k.verify_interval_min;
+    $("#keInStart").value = k.check_in_start;
+    $("#keInEnd").value = k.check_in_end;
+    $("#keDayEnd").value = k.day_end;
+    const m = $("#kendraEditModal");
+    m.classList.remove("hidden"); m.classList.add("flex");
+  }
+  function closeKendraEdit() {
+    const m = $("#kendraEditModal"); m.classList.add("hidden"); m.classList.remove("flex");
+  }
+  $("#kendraEditClose").addEventListener("click", closeKendraEdit);
+  $("#kendraEditCancel").addEventListener("click", closeKendraEdit);
+
+  $("#kendraEditForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!currentKendraEdit) return;
+    const btn = $("#kendraEditSave");
+    busy(btn, true, "Saving…");
+    const { data, error } = await sb.rpc("admin_update_kendra", {
+      p_kendra_id: currentKendraEdit,
+      p_name: $("#keName").value.trim(),
+      p_latitude: parseFloat($("#keLat").value),
+      p_longitude: parseFloat($("#keLon").value),
+      p_radius_m: parseInt($("#keRadius").value, 10),
+      p_check_in_start: $("#keInStart").value || null,
+      p_check_in_end: $("#keInEnd").value || null,
+      p_day_end: $("#keDayEnd").value || null,
+      p_verify_interval_min: parseInt($("#keVerify").value, 10),
+    });
+    busy(btn, false);
+    if (error) { toast(error.message, "err"); return; }
+    if (data && !data.ok) { toast(data.error || "Failed", "err"); return; }
+    toast("Kendra updated. Staff phones pick up the new location when they next open the app.", "ok");
+    closeKendraEdit();
     await loadKendras();
   });
 
