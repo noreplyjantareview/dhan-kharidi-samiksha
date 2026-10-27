@@ -87,15 +87,41 @@
   const sb = PREVIEW ? previewClient() : window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
   let KENDRAS = [];
   let currentAssign = null;
+  let adminVerified = false;
+  let adminUserId = null;
+  let authEpoch = 0;
+  let currentActivation = null;
+  let activationPending = false;
+  let activationScrollLocked = false;
 
   // ---------- auth ----------
   function showLogin() {
+    adminVerified = false;
+    adminUserId = null;
+    authEpoch++;
+    closeFaceActivation(false);
     $("#appView").classList.add("hidden");
     $("#appView").classList.remove("md:flex");
     $("#loginView").classList.remove("hidden");
     $("#loginView").classList.add("flex");
   }
   async function showApp(session) {
+    const epoch = ++authEpoch;
+    adminVerified = false;
+    closeFaceActivation(false);
+    try {
+      // Verify restored sessions too; the issuing RPC also enforces admin access.
+      const { data, error } = await sb.rpc("admin_overview");
+      if (epoch !== authEpoch) return;
+      if (error || !data?.ok) throw new Error("Admin access required");
+      adminUserId = session.user.id;
+      adminVerified = true;
+    } catch {
+      if (epoch !== authEpoch) return;
+      showLogin();
+      toast("Unable to verify administrator access. Please sign in again.", "err");
+      return;
+    }
     $("#loginView").classList.add("hidden");
     $("#loginView").classList.remove("flex");
     $("#appView").classList.remove("hidden");
@@ -127,9 +153,15 @@
   });
 
   $("#logoutBtn").addEventListener("click", async () => {
-    await sb.auth.signOut();
-    toast("Signed out", "info");
+    // Clear sensitive modal content immediately, even if sign-out is slow.
     showLogin();
+    try {
+      const result = await sb.auth.signOut();
+      if (result?.error) throw new Error("Sign-out failed");
+      toast("Signed out", "info");
+    } catch {
+      toast("Sign-out could not be completed. Please retry after signing in.", "err");
+    }
   });
 
   // ---------- navigation ----------
@@ -294,7 +326,7 @@
     const rows = (data && data.rows) || [];
     if (!rows.length) { $("#staffTable").innerHTML = `<tr><td class="p-6 text-slate-500">No staff yet.</td></tr>`; return; }
     $("#staffTable").innerHTML = `
-      <thead><tr><th scope="col">Name</th><th scope="col">Code</th><th scope="col">Mobile</th><th scope="col">Category</th><th scope="col">Face</th><th scope="col">Kendra &amp; shift</th><th scope="col"></th></tr></thead>
+      <thead><tr><th scope="col">Name</th><th scope="col">Code</th><th scope="col">Mobile</th><th scope="col">Category</th><th scope="col">Face</th><th scope="col">Phone</th><th scope="col">Kendra &amp; shift</th><th scope="col">Actions</th></tr></thead>
       <tbody>${rows.map((r) => `
         <tr>
           <td class="font-medium">${esc(r.full_name)}</td>
@@ -304,18 +336,155 @@
             ? `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-violet-100 text-violet-700">NODAL</span>`
             : `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-blue-100 text-blue-700">STAFF</span>`}${
             r.role === "admin" ? ` <span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-slate-100 text-slate-600">ADMIN</span>` : ""}</td>
-          <td>${r.face_registered
-            ? `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-green-100 text-green-700">Registered</span>`
-            : `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-amber-100 text-amber-700">Pending</span>`}</td>
+          <td>${r.face_version === 3 && r.face_registered
+            ? `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-green-100 text-green-700">Registered · v3</span>`
+            : r.face_version > 0 && r.face_version < 3
+              ? `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-amber-100 text-amber-700">Upgrade needed · v${esc(r.face_version)}</span>`
+              : `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-amber-100 text-amber-700">Enrollment pending</span>`}</td>
+          <td><span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide ${r.device_activated ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-600"}">${r.device_activated ? "Activated" : "Not activated"}</span></td>
           <td class="text-slate-500">${esc(r.kendra_names || "—")}</td>
           <td>${r.role !== "admin"
-            ? `<button data-assign='${esc(r.id)}' data-name='${esc(r.full_name)}' data-cat='${esc(r.category || "staff")}'
-                 class="inline-flex items-center gap-2 rounded px-1 py-1 text-sm font-semibold text-blue-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60">Assign</button>`
+            ? `<div class="flex flex-wrap gap-2"><button type="button" data-assign='${esc(r.id)}' data-name='${esc(r.full_name)}' data-cat='${esc(r.category || "staff")}'
+                 class="inline-flex items-center gap-2 rounded px-1 py-1 text-sm font-semibold text-blue-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60">Assign</button>
+               <button type="button" data-activate='${esc(r.id)}' aria-label="Activate phone for ${esc(r.full_name)}" aria-haspopup="dialog" aria-controls="faceActivationModal"
+                 class="inline-flex items-center gap-2 rounded px-1 py-1 text-sm font-semibold text-blue-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60">Activate phone</button></div>`
             : ""}</td>
         </tr>`).join("")}</tbody>`;
     $$("#staffTable [data-assign]").forEach((b) =>
       b.addEventListener("click", () => openAssign(b.dataset.assign, b.dataset.name, b.dataset.cat)));
+    $$("#staffTable [data-activate]").forEach((b) =>
+      b.addEventListener("click", () => openFaceActivation(rows.find((r) => r.id === b.dataset.activate), b)));
   }
+
+  // ---------- administrator-only phone activation ----------
+  function clearFaceActivationResult() {
+    $("#faceActivationResult").classList.add("hidden");
+    ["#faceActivationCode", "#faceActivationExpiry", "#faceActivationOutcome", "#faceActivationStatus", "#faceActivationError"].forEach((s) => { $(s).textContent = ""; });
+    $("#faceActivationError").classList.add("hidden");
+  }
+
+  function updateFaceActivationControls() {
+    const reset = $("#faceActivationReset").checked;
+    const locked = activationPending || !!currentActivation?.issued;
+    $("#faceResetConfirmWrap").classList.toggle("hidden", !reset);
+    $$("#faceActivationForm input").forEach((input) => { input.disabled = locked; });
+    $("#faceActivationIssue").disabled = locked || (reset && !$("#faceResetConfirm").checked);
+    if (!activationPending) $("#faceActivationIssue").textContent = reset ? "Issue code with face reset" : "Issue activation code";
+  }
+
+  function openFaceActivation(staff, trigger) {
+    if (!adminVerified || !staff || staff.role === "admin" || $("#appView").classList.contains("hidden")) return;
+    closeFaceActivation(false);
+    currentActivation = { id: staff.id, trigger, issued: false };
+    $("#faceActivationForm").reset();
+    clearFaceActivationResult();
+    $("#faceActivationName").textContent = `${staff.full_name} · ${staff.employee_code || "No employee code"} · ${staff.mobile_number}`;
+    $("#faceActivationPreview").classList.toggle("hidden", !PREVIEW);
+    updateFaceActivationControls();
+    activationScrollLocked = document.body.classList.contains("overflow-hidden");
+    document.body.classList.add("overflow-hidden");
+    $("#appView").inert = true;
+    const modal = $("#faceActivationModal");
+    modal.classList.remove("hidden"); modal.classList.add("flex");
+    $("#faceActivationTitle").focus();
+  }
+
+  function closeFaceActivation(returnFocus = true) {
+    const previous = currentActivation;
+    currentActivation = null; // Late RPC responses must never repopulate a closed/reopened dialog.
+    clearFaceActivationResult();
+    $("#faceActivationName").textContent = "";
+    $("#faceActivationForm").reset();
+    const modal = $("#faceActivationModal");
+    modal.classList.add("hidden"); modal.classList.remove("flex");
+    if (!previous) return;
+    $("#appView").inert = false;
+    if (!activationScrollLocked) document.body.classList.remove("overflow-hidden");
+    if (returnFocus) {
+      const target = previous.trigger.isConnected ? previous.trigger : $('[data-view="staff"]');
+      target.focus();
+    }
+  }
+
+  $("#faceActivationClose").addEventListener("click", () => closeFaceActivation());
+  $("#faceActivationDone").addEventListener("click", () => closeFaceActivation());
+  $$('#faceActivationForm input[name="faceActivationMode"]').forEach((input) => input.addEventListener("change", () => {
+    $("#faceResetConfirm").checked = false;
+    updateFaceActivationControls();
+  }));
+  $("#faceResetConfirm").addEventListener("change", updateFaceActivationControls);
+  document.addEventListener("keydown", (e) => {
+    if (!currentActivation) return;
+    if (e.key === "Escape") { e.preventDefault(); closeFaceActivation(); return; }
+    if (e.key !== "Tab") return;
+    const items = $$('#faceActivationModal button:not(:disabled), #faceActivationModal input:not(:disabled)').filter((el) => el.getClientRects().length);
+    const first = items[0], last = items[items.length - 1];
+    if (e.shiftKey && (document.activeElement === first || !items.includes(document.activeElement))) {
+      e.preventDefault(); last.focus();
+    } else if (!e.shiftKey && (document.activeElement === last || !items.includes(document.activeElement))) {
+      e.preventDefault(); first.focus();
+    }
+  });
+  document.addEventListener("focusin", (e) => {
+    if (currentActivation && !$("#faceActivationModal").contains(e.target)) $("#faceActivationTitle").focus();
+  });
+
+  $("#faceActivationForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const activation = currentActivation;
+    if (!adminVerified || !activation || activationPending || activation.issued) return;
+    const resetFace = $("#faceActivationReset").checked;
+    if (resetFace && !$("#faceResetConfirm").checked) {
+      toast("Confirm the face reset before issuing its code.", "err");
+      $("#faceResetConfirm").focus();
+      return;
+    }
+    activationPending = true;
+    clearFaceActivationResult();
+    const btn = $("#faceActivationIssue");
+    busy(btn, true, "Issuing…");
+    updateFaceActivationControls();
+    $("#faceActivationForm").setAttribute("aria-busy", "true");
+    veil(true);
+    try {
+      const { data, error } = await sb.rpc("admin_issue_face_activation", {
+        p_staff_id: activation.id, p_reset_face: resetFace,
+      });
+      if (currentActivation !== activation || !adminVerified) return;
+      const expiry = new Date(data?.expires_at);
+      if (error || data?.ok !== true || !/^[0-9a-f]{12}$/i.test(data.activation_code || "") ||
+          typeof data.expires_at !== "string" || !Number.isFinite(expiry.getTime())) {
+        throw new Error("Activation issue failed");
+      }
+      activation.issued = true;
+      // The code lives only in this open admin dialog: never toast, store or log it.
+      $("#faceActivationCode").textContent = data.activation_code;
+      $("#faceActivationExpiry").textContent = PREVIEW
+        ? `Fake expiry (preview only): ${data.expires_at}`
+        : `Expires: ${expiry.toLocaleString()} (this browser's local time)`;
+      $("#faceActivationOutcome").textContent = resetFace
+        ? "Face reset selected: new face enrollment is required only AFTER successful code redemption. Until then, the current phone and face remain unchanged."
+        : "No face reset requested. Successful code redemption replaces the current phone; issuing this code alone changes neither the phone nor the face.";
+      $("#faceActivationStatus").textContent = PREVIEW ? "Dummy preview code ready — not valid for activation." : "Activation code issued. Share it privately with this verified employee.";
+      $("#faceActivationResult").classList.remove("hidden");
+      toast(PREVIEW ? "Dummy preview code ready in the dialog." : "Activation code ready in the dialog.", "ok");
+      $("#faceActivationResult").focus();
+    } catch {
+      if (currentActivation !== activation || !adminVerified) return;
+      // Do not echo server payloads/errors: they could contain sensitive data.
+      const message = "Could not issue an activation code. Check your connection and administrator access, then retry.";
+      $("#faceActivationError").textContent = message;
+      $("#faceActivationError").classList.remove("hidden");
+      toast(message, "err");
+      $("#faceActivationError").focus();
+    } finally {
+      activationPending = false;
+      busy(btn, false);
+      $("#faceActivationForm").setAttribute("aria-busy", "false");
+      updateFaceActivationControls();
+      veil(false);
+    }
+  });
 
   $("#enrollForm").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -560,19 +729,74 @@
   });
 
   // ---------- bulk excel ----------
-  const HEADERS = ["Full name", "Employee code", "Mobile number", "Role", "Category",
-                   "Kendra name(s)", "Check-in time", "Day ends"];
+  const BULK_MODES = {
+    staff: {
+      title: "Bulk enroll staff from Excel",
+      hint: `Columns: <b>Full name</b>, <b>Employee code</b>, <b>Mobile number</b>, <b>Role</b> (staff/admin), <b>Category</b> (staff/nodal), <b>Kendra name(s)</b> (comma-separated for nodal), <b>Check-in time</b> and <b>Day ends</b> (optional, for staff). Kendras must already exist — upload them first under <b>Kendras</b> above.`,
+      submit: "Upload & enroll",
+      done: "enrolled",
+      rpc: "admin_bulk_enroll",
+      sheet: "Staff",
+      file: "dks-staff-template.xlsx",
+      headers: ["Full name", "Employee code", "Mobile number", "Role", "Category",
+                "Kendra name(s)", "Check-in time", "Day ends"],
+      sample: [
+        ["Ram Kumar Sahu", "EMP-0001", "9812345670", "staff", "staff", "Kendra Raipur-1", "08:00", "18:00"],
+        ["Sita Verma", "EMP-0002", "9876543210", "staff", "nodal", "Kendra Raipur-1, Kendra Dhamtari-2", "", ""],
+        ["Anil Yadav", "EMP-0003", "9765432109", "staff", "staff", "Kendra Dhamtari-2", "14:00", "22:00"],
+      ],
+      widths: [22, 14, 15, 10, 11, 40, 13, 11],
+      previewMin: "",
+    },
+    kendra: {
+      title: "Bulk create kendras from Excel",
+      hint: `Columns: <b>Kendra name</b>, <b>Latitude</b>, <b>Longitude</b>, <b>Radius (m)</b> and <b>Verify every (min)</b>. The last two are optional and default to <b>100 m</b> and <b>30 min</b>. Names must be unique — the staff upload finds kendras by name. Rows with a bad latitude, longitude or duplicate name are reported individually and the rest still import.`,
+      submit: "Upload & create",
+      done: "created",
+      rpc: "admin_bulk_kendras",
+      sheet: "Kendras",
+      file: "dks-kendra-template.xlsx",
+      headers: ["Kendra name", "Latitude", "Longitude", "Radius (m)", "Verify every (min)"],
+      sample: [
+        ["Kendra Raipur-1", 21.2514, 81.6296, 150, 30],
+        ["Kendra Dhamtari-2", 20.7096, 81.5519, 120, 30],
+        ["Kendra Balod-3", 20.7294, 81.2743, 100, 45],
+      ],
+      widths: [26, 13, 13, 12, 18],
+      previewMin: "720px",
+    },
+  };
+  let bulkMode = "staff";
+  let bulkBusy = false;
+  let BULK_ROWS = [];
+
+  function setBulkMode(mode) {
+    if (bulkBusy) { toast("Wait for the current upload to finish.", "err"); return; }
+    bulkMode = mode;
+    BULK_ROWS = [];
+    $("#xlsxFile").value = "";
+    $("#bulkPreviewWrap").classList.add("hidden");
+    $("#bulkResultWrap").classList.add("hidden");
+    $$("#bulkModeBtns [data-bulk-mode]").forEach((b) =>
+      b.setAttribute("aria-current", String(b.dataset.bulkMode === mode)));
+    const cfg = BULK_MODES[mode];
+    $("#bulkTitle").textContent = cfg.title;
+    $("#bulkHint").innerHTML = cfg.hint;
+    $("#bulkSubmit").textContent = cfg.submit;
+    $("#bulkPreview").style.minWidth = cfg.previewMin;
+  }
+
+  $$("#bulkModeBtns [data-bulk-mode]").forEach((b) =>
+    b.addEventListener("click", () => setBulkMode(b.dataset.bulkMode)));
+
   $("#tplBtn").addEventListener("click", () => {
-    const ws = XLSX.utils.aoa_to_sheet([
-      HEADERS,
-      ["Ram Kumar Sahu", "EMP-0001", "9812345670", "staff", "staff", "Kendra Raipur-1", "08:00", "18:00"],
-      ["Sita Verma", "EMP-0002", "9876543210", "staff", "nodal", "Kendra Raipur-1, Kendra Dhamtari-2", "", ""],
-      ["Anil Yadav", "EMP-0003", "9765432109", "staff", "staff", "Kendra Dhamtari-2", "14:00", "22:00"],
-    ]);
-    ws["!cols"] = [{ wch: 22 }, { wch: 14 }, { wch: 15 }, { wch: 10 }, { wch: 11 }, { wch: 40 }, { wch: 13 }, { wch: 11 }];
+    const cfg = BULK_MODES[bulkMode];
+    const ws = XLSX.utils.aoa_to_sheet([cfg.headers, ...cfg.sample]);
+    ws["!cols"] = cfg.widths.map((wch) => ({ wch }));
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Staff");
-    XLSX.writeFile(wb, "dks-staff-template.xlsx");
+    XLSX.utils.book_append_sheet(wb, ws, cfg.sheet);
+    XLSX.writeFile(wb, cfg.file);
+    toast(`${cfg.sheet} template downloaded.`, "ok");
   });
 
   function normKey(k) { return String(k).toLowerCase().replace(/[^a-z]/g, ""); }
@@ -594,20 +818,45 @@
     }
     return out;
   }
+  // A coordinate can never carry a thousands separator, so a lone comma is
+  // the decimal comma some regional Excel installs write.
+  function coordText(v) {
+    const s = String(v ?? "").trim();
+    return /^[+-]?\d+,\d+$/.test(s) ? s.replace(",", ".") : s;
+  }
+  function wholeText(v) { return String(v ?? "").replace(/\D/g, ""); }
+  function mapKendraRow(raw) {
+    const out = { name: "", latitude: "", longitude: "", radius_m: "", verify_interval_min: "" };
+    for (const [k, v] of Object.entries(raw)) {
+      const key = normKey(k);
+      const val = String(v ?? "").trim();
+      if (["kendraname", "name", "kendra", "kendranames", "centrename", "centre", "center"].includes(key)) out.name = val;
+      else if (["latitude", "lat"].includes(key)) out.latitude = coordText(v);
+      else if (["longitude", "long", "lon", "lng"].includes(key)) out.longitude = coordText(v);
+      else if (["radiusm", "radius", "radiusmetres", "radiusmeters", "fenceradius", "geofenceradius"].includes(key)) out.radius_m = wholeText(v);
+      else if (["verifyeverymin", "verifyintervalmin", "verifyevery", "verifyinterval", "verify",
+                "reverifymin", "pulseintervalmin", "verifyminutes"].includes(key)) out.verify_interval_min = wholeText(v);
+    }
+    return out;
+  }
 
-  let BULK_ROWS = [];
-  $("#xlsxFile").addEventListener("change", async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, { type: "array" });
-    const sheet = wb.Sheets[wb.SheetNames[0]];
-    const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-    BULK_ROWS = json.map(mapRow).filter((r) => r.full_name || r.mobile_number || r.employee_code);
+  const dash = (s) => (String(s ?? "").trim() === "" ? `<span class="text-slate-300">—</span>` : esc(s));
+
+  function renderBulkPreview() {
     $("#bulkCount").textContent = BULK_ROWS.length;
     $("#bulkPreviewWrap").classList.toggle("hidden", BULK_ROWS.length === 0);
     $("#bulkResultWrap").classList.add("hidden");
-    $("#bulkPreview").innerHTML = `
+    if (!BULK_ROWS.length) return;
+    $("#bulkPreview").innerHTML = bulkMode === "kendra" ? `
+      <thead><tr><th scope="col">Kendra name</th><th scope="col">Latitude</th><th scope="col">Longitude</th><th scope="col">Radius</th><th scope="col">Verify every</th></tr></thead>
+      <tbody>${BULK_ROWS.map((r) => `
+        <tr>
+          <td class="font-medium">${dash(r.name)}</td>
+          <td class="tabular-nums whitespace-nowrap">${dash(r.latitude)}</td>
+          <td class="tabular-nums whitespace-nowrap">${dash(r.longitude)}</td>
+          <td class="tabular-nums whitespace-nowrap">${r.radius_m ? `${esc(r.radius_m)} m` : `<span class="text-slate-400">100 m (default)</span>`}</td>
+          <td class="tabular-nums whitespace-nowrap">${r.verify_interval_min ? `${esc(r.verify_interval_min)} min` : `<span class="text-slate-400">30 min (default)</span>`}</td>
+        </tr>`).join("")}</tbody>` : `
       <thead><tr><th scope="col">Name</th><th scope="col">Code</th><th scope="col">Mobile</th><th scope="col">Role</th><th scope="col">Category</th><th scope="col">Kendra(s)</th><th scope="col">Check-in</th><th scope="col">Day ends</th></tr></thead>
       <tbody>${BULK_ROWS.map((r) => `
         <tr><td>${esc(r.full_name)}</td><td class="tabular-nums whitespace-nowrap">${esc(r.employee_code)}</td>
@@ -615,20 +864,49 @@
         <td>${r.category === "nodal" ? `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-violet-100 text-violet-700">NODAL</span>` : `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-blue-100 text-blue-700">STAFF</span>`}</td>
         <td class="text-slate-500">${esc(r.kendra_names)}</td>
         <td class="tabular-nums whitespace-nowrap">${esc(r.check_in_start || "—")}</td><td class="tabular-nums whitespace-nowrap">${esc(r.day_end || "—")}</td></tr>`).join("")}</tbody>`;
+  }
+
+  $("#xlsxFile").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array" });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const json = sheet ? XLSX.utils.sheet_to_json(sheet, { defval: "" }) : [];
+    if (bulkMode === "kendra") {
+      BULK_ROWS = json.map(mapKendraRow).filter((r) => r.name || r.latitude || r.longitude);
+    } else {
+      BULK_ROWS = json.map(mapRow).filter((r) => r.full_name || r.mobile_number || r.employee_code);
+    }
+    renderBulkPreview();
     if (!BULK_ROWS.length) toast("No rows found. Check the header row.", "err");
   });
 
   $("#bulkSubmit").addEventListener("click", async () => {
     if (!BULK_ROWS.length) { toast("Nothing to upload.", "err"); return; }
+    const cfg = BULK_MODES[bulkMode];
     const btn = $("#bulkSubmit");
+    bulkBusy = true;
     busy(btn, true, "Uploading…");
-    const { data, error } = await sb.rpc("admin_bulk_enroll", { p_rows: BULK_ROWS });
+    const { data, error } = await sb.rpc(cfg.rpc, { p_rows: BULK_ROWS });
     busy(btn, false);
+    bulkBusy = false;
     if (error) { toast(error.message, "err"); return; }
+    if (data && !data.ok) { toast(data.error || "Failed", "err"); return; }
     const results = (data && data.results) || [];
     const okCount = results.filter((r) => r.ok).length;
     $("#bulkResultWrap").classList.remove("hidden");
-    $("#bulkResult").innerHTML = `
+    $("#bulkResult").innerHTML = bulkMode === "kendra" ? `
+      <thead><tr><th scope="col">Kendra name</th><th scope="col">Latitude</th><th scope="col">Longitude</th><th scope="col">Result</th></tr></thead>
+      <tbody>${results.map((r) => `
+        <tr>
+          <td class="font-medium">${dash(r.name)}</td>
+          <td class="tabular-nums whitespace-nowrap">${dash(r.latitude)}</td>
+          <td class="tabular-nums whitespace-nowrap">${dash(r.longitude)}</td>
+          <td>${r.ok
+            ? `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-green-100 text-green-700">Created</span>`
+            : `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-red-100 text-red-700">${esc(r.error || "Failed")}</span>`}</td>
+        </tr>`).join("")}</tbody>` : `
       <thead><tr><th scope="col">Name</th><th scope="col">Code</th><th scope="col">Mobile</th><th scope="col">Result</th></tr></thead>
       <tbody>${results.map((r) => `
         <tr>
@@ -637,9 +915,18 @@
             ? `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-green-100 text-green-700">Enrolled</span>`
             : `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-red-100 text-red-700">${esc(r.error || "Failed")}</span>`}</td>
         </tr>`).join("")}</tbody>`;
-    toast(`${okCount} of ${results.length} enrolled.`, okCount ? "ok" : "err");
+    toast(`${okCount} of ${results.length} ${cfg.done}.`, okCount ? "ok" : "err");
     BULK_ROWS = []; $("#xlsxFile").value = "";
     $("#bulkPreviewWrap").classList.add("hidden");
+    if (bulkMode === "kendra") {
+      await ensureKendras();
+      fillKendraFilter("#logKendra");
+      fillKendraFilter("#nvKendra");
+      await loadKendrasIfVisible();
+    } else {
+      await loadStaff();
+      await loadKendrasIfVisible();
+    }
   });
 
   // ---------- default filter dates ----------
@@ -651,8 +938,9 @@
     if (data.session) showApp(data.session); else showLogin();
   });
   sb.auth.onAuthStateChange((_evt, session) => {
-    if (!session) showLogin();
+    if (!session || (adminVerified && session.user.id !== adminUserId)) showLogin();
   });
+  window.addEventListener("pagehide", () => closeFaceActivation(false));
 
   // ---------- preview mode (design check without credentials) ----------
   function previewClient() {
@@ -665,12 +953,12 @@
       { id: "k5", name: "Kendra Rajnandgaon-5", latitude: 21.0972, longitude: 81.0317, radius_m: 200, verify_interval_min: 30, staff_count: 2, nodal_count: 0 },
     ];
     const S = [
-      { id: "s1", full_name: "Ram Kumar Sahu", employee_code: "EMP-0001", mobile_number: "9812345670", role: "staff", category: "staff", face_registered: true, kendra_names: "Kendra Raipur-1 (08:00)" },
-      { id: "s2", full_name: "Sita Verma", employee_code: "EMP-0002", mobile_number: "9876543210", role: "staff", category: "nodal", face_registered: true, kendra_names: "Kendra Raipur-1, Kendra Dhamtari-2, Kendra Balod-3" },
-      { id: "s3", full_name: "Anil Yadav", employee_code: "EMP-0003", mobile_number: "9765432109", role: "staff", category: "staff", face_registered: false, kendra_names: "Kendra Dhamtari-2 (14:00)" },
-      { id: "s4", full_name: "Kavita Nishad", employee_code: "EMP-0004", mobile_number: "9654321098", role: "staff", category: "staff", face_registered: true, kendra_names: "Kendra Balod-3 (09:30)" },
-      { id: "s5", full_name: "Mahesh Dewangan", employee_code: "EMP-0005", mobile_number: "9543210987", role: "staff", category: "nodal", face_registered: true, kendra_names: "Kendra Bemetara-4, Kendra Rajnandgaon-5" },
-      { id: "s6", full_name: "Pooja Sahu", employee_code: "EMP-0006", mobile_number: "9432109876", role: "admin", category: "staff", face_registered: true, kendra_names: null },
+      { id: "s1", full_name: "Ram Kumar Sahu", employee_code: "EMP-0001", mobile_number: "9812345670", role: "staff", category: "staff", face_version: 3, device_activated: true, face_registered: true, kendra_names: "Kendra Raipur-1 (08:00)" },
+      { id: "s2", full_name: "Sita Verma", employee_code: "EMP-0002", mobile_number: "9876543210", role: "staff", category: "nodal", face_version: 2, device_activated: false, face_registered: false, kendra_names: "Kendra Raipur-1, Kendra Dhamtari-2, Kendra Balod-3" },
+      { id: "s3", full_name: "Anil Yadav", employee_code: "EMP-0003", mobile_number: "9765432109", role: "staff", category: "staff", face_version: 0, device_activated: false, face_registered: false, kendra_names: "Kendra Dhamtari-2 (14:00)" },
+      { id: "s4", full_name: "Kavita Nishad", employee_code: "EMP-0004", mobile_number: "9654321098", role: "staff", category: "staff", face_version: 3, device_activated: true, face_registered: true, kendra_names: "Kendra Balod-3 (09:30)" },
+      { id: "s5", full_name: "Mahesh Dewangan", employee_code: "EMP-0005", mobile_number: "9543210987", role: "staff", category: "nodal", face_version: 3, device_activated: true, face_registered: true, kendra_names: "Kendra Bemetara-4, Kendra Rajnandgaon-5" },
+      { id: "s6", full_name: "Pooja Sahu", employee_code: "EMP-0006", mobile_number: "9432109876", role: "admin", category: "staff", face_version: 0, device_activated: false, face_registered: false, kendra_names: null },
     ];
     const A = {
       s1: [{ kendra_id: "k1", kendra_name: "Kendra Raipur-1", check_in_start: "08:00", check_in_end: "08:30", day_end: "18:00" }],
@@ -707,12 +995,37 @@
                            nodal_visits_today: 11 }, error: null };
         case "admin_list_kendras": return rows(K);
         case "admin_list_staff": return rows(S);
+        case "admin_issue_face_activation":
+          // Deterministic, non-secret dummy with a deliberately fake/past expiry.
+          // Issuance alone must not mutate the sample phone or face status.
+          return ok({ activation_code: "000000000000", expires_at: "2000-01-01T00:15:00Z" });
         case "admin_staff_kendras": return { data: { ok: true, category: (S.find((s) => s.id === args.p_staff_id) || {}).category || "staff", assignments: A[args.p_staff_id] || [] }, error: null };
         case "admin_attendance_log": return rows(L);
         case "admin_nodal_visits": return rows(V);
         case "admin_assign_kendra": return ok({ check_in_end: "08:30" });
         case "admin_bulk_enroll":
           return { data: { ok: true, results: (args.p_rows || []).map((r) => ({ name: r.full_name, code: r.employee_code, mobile: r.mobile_number, ok: true })) }, error: null };
+        case "admin_bulk_kendras": {
+          const results = (args.p_rows || []).map((r, i) => {
+            const name = String(r.name || "").trim();
+            const lat = String(r.latitude || "").trim();
+            const lon = String(r.longitude || "").trim();
+            const bad = !name ? "Kendra name is required."
+              : K.some((k) => k.name.toLowerCase() === name.toLowerCase()) ? `Kendra name already exists: ${name}`
+              : !lat ? "Latitude is required."
+              : !/^[+-]?(\d+(\.\d*)?|\.\d+)$/.test(lat) ? `Latitude is not a number: ${lat}`
+              : Number(lat) < -90 || Number(lat) > 90 ? `Latitude must be between -90 and 90: ${lat}`
+              : !lon ? "Longitude is required."
+              : !/^[+-]?(\d+(\.\d*)?|\.\d+)$/.test(lon) ? `Longitude is not a number: ${lon}`
+              : Number(lon) < -180 || Number(lon) > 180 ? `Longitude must be between -180 and 180: ${lon}`
+              : null;
+            if (!bad) K.push({ id: `kb${i}${K.length}`, name, latitude: Number(lat), longitude: Number(lon),
+                               radius_m: Number(r.radius_m) || 100, verify_interval_min: Number(r.verify_interval_min) || 30,
+                               staff_count: 0, nodal_count: 0 });
+            return { name, latitude: lat, longitude: lon, ok: !bad, error: bad };
+          });
+          return { data: { ok: true, results }, error: null };
+        }
         default: return ok();
       }
     }

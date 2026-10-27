@@ -16,14 +16,18 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,7 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.vsk.attendance.face.FaceCaptureCard
-import com.vsk.attendance.face.FaceGeometry
+import kotlinx.coroutines.launch
 
 private val Blue = Color(0xFF1D4ED8)
 private val Green = Color(0xFF16A34A)
@@ -41,15 +45,17 @@ private val Amber = Color(0xFFD97706)
 private val Slate = Color(0xFF64748B)
 private val CardShape = RoundedCornerShape(20.dp)
 
-private enum class FaceAction { ON, OFF }
-
 @Composable
 fun AttendanceScreen(vm: MainViewModel) {
     val staff by vm.staff.collectAsState()
     val kendras by vm.kendras.collectAsState()
     val att by vm.attendance.collectAsState()
-    var faceAction by remember { mutableStateOf<FaceAction?>(null) }
-    var faceMsg by remember { mutableStateOf<String?>(null) }
+    val busy by vm.dutyBusy.collectAsState()
+    val faceCheck by vm.faceCheck.collectAsState()
+    val scope = rememberCoroutineScope()
+    var faceMsg by remember(faceCheck?.challengeId) { mutableStateOf<String?>(null) }
+    val actionsEnabled = !busy && faceCheck == null && att.running && kendras.isNotEmpty()
+    DisposableEffect(vm) { onDispose { vm.cancelFaceCheck() } }
 
     val nodal = staff?.isNodal == true
     val checkedIn = !nodal && att.checkInAt != null
@@ -131,6 +137,13 @@ fun AttendanceScreen(vm: MainViewModel) {
                 Text("Live status", fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(6.dp))
                 Text(att.message, style = MaterialTheme.typography.bodyMedium, color = Color(0xFF334155))
+                if (busy) {
+                    Spacer(Modifier.height(8.dp))
+                    CircularProgressIndicator(modifier = Modifier.height(24.dp), strokeWidth = 2.dp)
+                    Text("Please wait — attendance request in progress.", style = MaterialTheme.typography.bodySmall)
+                } else if (!att.running) {
+                    TextButton(onClick = { vm.startAttendance() }) { Text("Retry attendance refresh") }
+                }
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     att.nearestKendraName?.let { Chip(it) }
@@ -229,8 +242,8 @@ fun AttendanceScreen(vm: MainViewModel) {
         // Actions
         when {
             nodal -> Button(
-                onClick = { faceMsg = null; faceAction = FaceAction.ON },
-                enabled = kendras.isNotEmpty(),
+                onClick = { vm.prepareFaceCheck("on") { faceMsg = null } },
+                enabled = actionsEnabled,
                 colors = ButtonDefaults.buttonColors(containerColor = Green),
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.fillMaxWidth().height(56.dp)
@@ -261,7 +274,8 @@ fun AttendanceScreen(vm: MainViewModel) {
             }
 
             checkedIn -> Button(
-                onClick = { faceMsg = null; faceAction = FaceAction.OFF },
+                onClick = { vm.prepareFaceCheck("off") { faceMsg = null } },
+                enabled = actionsEnabled,
                 colors = ButtonDefaults.buttonColors(containerColor = Red),
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.fillMaxWidth().height(56.dp)
@@ -270,8 +284,8 @@ fun AttendanceScreen(vm: MainViewModel) {
             }
 
             else -> Button(
-                onClick = { faceMsg = null; faceAction = FaceAction.ON },
-                enabled = kendras.isNotEmpty(),
+                onClick = { vm.prepareFaceCheck("on") { faceMsg = null } },
+                enabled = actionsEnabled,
                 colors = ButtonDefaults.buttonColors(containerColor = Green),
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.fillMaxWidth().height(56.dp)
@@ -283,52 +297,52 @@ fun AttendanceScreen(vm: MainViewModel) {
         Spacer(Modifier.height(8.dp))
     }
 
-    // Face verification dialog
-    faceAction?.let { action ->
-        val template = staff?.faceTemplate
-        Dialog(onDismissRequest = { faceAction = null; faceMsg = null }) {
+    // A dialog exists only after the server has issued an action-bound, short-lived nonce.
+    faceCheck?.let { check ->
+        Dialog(onDismissRequest = { vm.cancelFaceCheck(); faceMsg = null }) {
             Card(shape = CardShape, colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                Column(Modifier.padding(16.dp)) {
+                Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
                     Text(
                         when {
-                            action == FaceAction.ON && nodal -> "Face check — record visit"
-                            action == FaceAction.ON -> "Face check — On Duty"
+                            check.action == "on" && nodal -> "Face check — record visit"
+                            check.action == "on" -> "Face check — On Duty"
                             else -> "Face check — Off Duty"
                         },
                         style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold
                     )
                     Text(
-                        "Look straight at the camera, then capture. The face must match your registration.",
+                        "Follow the camera instructions, including the requested head turn. " +
+                            "Face and presentation checks run on this phone; no camera image is uploaded.",
                         style = MaterialTheme.typography.bodySmall, color = Slate,
                         modifier = Modifier.padding(top = 2.dp, bottom = 12.dp)
                     )
-                    if (template == null) {
-                        Text("No face registration found — sign out and register again.", color = Red)
-                    } else {
+                    key(check.challengeId) {
                         FaceCaptureCard(
-                            buttonLabel = "Capture & verify",
-                            buttonColor = if (action == FaceAction.ON) Green else Red,
-                            onFace = { face, w, h, bitmap ->
-                                val issue = FaceGeometry.qualityIssue(face, w, h)
-                                if (issue != null) { faceMsg = issue; return@FaceCaptureCard }
-                                val res = FaceGeometry.match(template, face, bitmap)
-                                if (res.ok) {
-                                    faceAction = null
+                            enrolling = false,
+                            template = check.template,
+                            turn = check.turn,
+                            enabled = !busy,
+                            buttonColor = if (check.action == "on") Green else Red,
+                            onComplete = {
+                                scope.launch {
+                                    // Ignore completion from a cancelled/replaced capture, even if it arrives late.
+                                    if (vm.faceCheck.value !== check || vm.dutyBusy.value) return@launch
                                     faceMsg = null
-                                    if (action == FaceAction.ON) vm.onDuty() else vm.offDuty()
-                                } else {
-                                    faceMsg = res.message ?: "Face does not match — try again."
+                                    if (check.action == "on") vm.onDuty(check.challengeId)
+                                    else vm.offDuty(check.challengeId)
                                 }
                             },
-                            onError = { faceMsg = it }
+                            onError = { error ->
+                                scope.launch { if (vm.faceCheck.value === check) faceMsg = error }
+                            }
                         )
                     }
-                    if (faceMsg != null) {
-                        Text(faceMsg!!, color = Red, style = MaterialTheme.typography.bodySmall,
+                    faceMsg?.let {
+                        Text(it, color = Red, style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(top = 10.dp))
                     }
                     TextButton(
-                        onClick = { faceAction = null; faceMsg = null },
+                        onClick = { vm.cancelFaceCheck(); faceMsg = null },
                         modifier = Modifier.align(Alignment.End)
                     ) { Text("Cancel", color = Slate) }
                 }

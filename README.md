@@ -20,16 +20,16 @@ the dashboard · GitHub Actions to build the APK and deploy the dashboard.
 ## How attendance works
 
 ```
-Staff opens app → types registered mobile → login_by_mobile() returns the staff
-                    record + their allowed kendra list + employee code & category (staff / nodal)
-        │  first login only: face registration (numeric signature stored, no photo)
+Administrator verifies employee identity → issues one-time phone activation code
+Staff types registered mobile (+ activation code on a new phone) → login_staff_v3()
+        │  supervised enrollment: five trained face embeddings, no photos
         ▼
 App streams GPS (foreground) while open
-        ├─ staff taps "On Duty"  → face check vs stored template → record_check_in()
-        ├─ nodal taps "On Duty" at a kendra → face check → visit stamped (arrival time)
-        ├─ every verify_interval_min while on duty / visit open  → record_pulse() (present/absent)
-        ├─ staff taps "Off Duty" → face check vs stored template → record_check_out()
-        └─ forgotten? at/after day_end the app auto-checks-out   → record_check_out()
+        ├─ On Duty → server challenge → live multi-frame face check → record_check_in_v3()
+        ├─ nodal On Duty at an allowed kendra → same face check → visit stamped
+        ├─ every verify_interval_min while on duty / visit open → record_pulse_v3()
+        ├─ Off Duty → server challenge → live multi-frame face check → record_check_out_v3()
+        └─ at/after assigned day_end → device-authorized automatic check-out
         ▼
 Server re-validates the geofence distance + IST window before writing anything.
 Check-out stores work_minutes (total duty duration). On Duty stays locked for the day after that.
@@ -74,20 +74,41 @@ as absent pulses. Geofence math and windows are enforced server-side.
 - The migration copies each kendra's old timings into its existing staff assignments, so current
   shifts survive the upgrade unchanged.
 
-### Face verification (proxy-attendance deterrent)
+### Face verification (migration 9)
 
-- At first login the staff captures one selfie **in the app**; only a numeric template is stored on
-  the staff record — **no photo is stored or uploaded, ever**. The template (v2) holds two signals,
-  both normalized to eye midpoint / eye distance:
-  1. landmark + jaw-contour **geometry**, and
-  2. an aligned 32×32 high-pass grayscale **appearance signature** (1024 numbers, base64).
-  Geometry alone is nearly identical for every frontal face, so the appearance signature is what
-  actually separates one person from another; a punch needs **both** checks to pass.
-- Every On Duty / Off Duty opens the camera, requires one clear frontal face, and compares both
-  signals against the stored template. A mismatch refuses the punch and shows the match score.
-- The template is enroll-once: `save_face_template()` rejects overwriting a v2 template. v1
-  (geometry-only) templates are replaced once, automatically, the next time the staff registers —
-  see migration 5.
+- **Trained recognition, not image-pattern matching:** OpenCV YuNet detects five landmarks;
+  SFace aligns the face to 112×112 and produces a normalized 128-value embedding. Enrollment stores
+  five quality-checked samples in a versioned `sface-2021dec` template. Old v1/v2 registrations
+  require supervised re-enrollment; there is no fallback to the old matcher.
+- **Guided multi-frame capture:** checks face size, framing, head tilt, lighting and sharpness;
+  an on-device MiniFASNetV2 model screens for presentation attacks. Follow the randomized left/right
+  turn and return to the camera. Identity must remain consistent throughout, with three matching
+  final frames. Poor capture conditions give specific instructions instead of a similarity score.
+- **No face photos are saved or uploaded.** Frames and crops exist only in memory. Numeric templates
+  are still sensitive biometric data: they are stored in the protected staff record and encrypted
+  locally with AndroidKeyStore AES-GCM. Device credentials are encrypted too; app backups are disabled.
+- **Supervised activation:** Dashboard → Staff → Activate phone. Personally verify the employee,
+  issue a code and share it privately. Codes expire after 15 minutes, work once, and lock after five
+  wrong attempts. Normal subsequent login needs only the mobile number on the activated phone.
+  Issuing a code leaves the current phone working; redeeming it replaces that phone. Choose face
+  reset only when a new supervised registration is needed. Uninstalling/reinstalling requires activation.
+- **Protected attendance RPCs:** a device token plus a 90-second, action-bound, single-use challenge
+  is required for manual On/Off Duty. Server time controls automatic day-end checkout. Legacy
+  unauthenticated attendance/template RPCs are revoked. Deploy migration 9, dashboard and APK together:
+  older APKs intentionally stop working after this migration.
+
+**Accuracy and liveness limits:** this is not Aadhaar FaceRD, certified PAD or a measured equivalent.
+The initial SFace cosine threshold is 0.363; MiniFASNet live probability must be at least 0.80.
+These are provisional operating points, not accuracy percentages. Validate on the actual phones,
+lighting and employee population before rollout; do not lower thresholds just to make retries pass.
+A modified/rooted app can bypass client-side face checks despite device authorization and nonces.
+Higher assurance requires a trusted attestation/verification architecture, not just another model.
+
+Before production, use consenting employees to measure genuine acceptance/retry rates across indoor,
+outdoor and low-light sessions, glasses, age ranges and skin tones; record timing and pass/fail only,
+not images. Test different-person attempts, printed photos, phone-screen photos and replay videos,
+challenge expiry/replay, phone replacement and account reset. Report false acceptance/rejection
+separately, with trial counts. A small successful demo is not evidence of Aadhaar-like accuracy.
 
 ---
 
@@ -112,6 +133,14 @@ Run **all** migrations in the Supabase **SQL Editor** (New query → paste → R
    staff→kendra assignment; unique employee codes; `staff`/`nodal` categories; `visits` table +
    nodal visit recording; **Nodal visits** report RPC. Run this **before** installing the matching
    APK — the app and dashboard call the new RPC signatures.
+8. [`supabase/bulk_kendras.sql`](supabase/bulk_kendras.sql) — `admin_bulk_kendras()` so the dashboard
+   can create many kendras from one Excel/CSV upload, with per-row validation (required name,
+   numeric lat/long in range, radius + verify-interval bounds, duplicate-name rejection).
+9. [`supabase/face_auth_v3.sql`](supabase/face_auth_v3.sql) — supervised phone activation, locked
+   v3 enrollment, device-authorized attendance and single-use face-check challenges. Run the entire
+   transaction once; read-only checks follow it. Activate every existing employee and re-enroll
+   their face using the matching new APK. **Do not rerun older migrations afterward:** they can
+   restore legacy RPC grants; migration 9 must remain last.
 
 All are re-runnable. Verification `SELECT`s at the bottom of each confirm success.
 
@@ -156,8 +185,10 @@ You don't need the IDE. Two options:
   APK at `app/build/outputs/apk/debug/app-debug.apk`. Install with
   `adb install -r <apk>` or sideload the file. Needs a **physical phone with GPS**.
 
-Staff log in with the mobile number an admin enrolled. Admins who log into the phone app see a
-notice pointing them to the web dashboard.
+Staff log in with the mobile number an admin enrolled, plus a one-time activation code on a new
+installation. Admins who log into the phone app see a notice pointing them to the web dashboard.
+Android screenshots/recording and recent-app thumbnails are blocked to keep camera frames out of
+system captures. Bundled models add about 41 MB before APK compression; inference needs no model download.
 
 ---
 
@@ -177,10 +208,12 @@ A no-build static site in [`dashboard/`](dashboard). Features:
 - **Kendras** — create with lat/long, radius and verify interval (no timing any more); **Edit** any
   kendra later (e.g. correct its lat/long). Staff phones pick up the new location the next time
   they open the app.
-- **Bulk upload** — upload an `.xlsx`, preview, and enroll many staff at once with per-row results.
-  A **Download template** button generates the sheet.
+- **Bulk upload** — a **Staff / Kendras** switch picks what the sheet contains. Upload an `.xlsx`
+  or `.csv`, preview it, then import with per-row results. A **Download template** button generates
+  the right sheet for whichever mode is selected. Upload kendras first: the staff sheet matches
+  kendras by name.
 
-### Excel template columns
+### Excel template columns — Staff
 | Column | Values |
 |---|---|
 | Full name | text |
@@ -194,6 +227,18 @@ A no-build static site in [`dashboard/`](dashboard). Features:
 
 Kendras are matched **by name** and must already exist. Rows with an unknown kendra or a duplicate
 mobile are reported as failures; the rest still import.
+
+### Excel template columns — Kendras
+| Column | Values |
+|---|---|
+| Kendra name | text, must be unique (staff sheets find kendras by name) |
+| Latitude | decimal degrees, −90 to 90 |
+| Longitude | decimal degrees, −180 to 180 |
+| Radius (m) | optional whole number, 10–5000, default `100` |
+| Verify every (min) | optional whole number, 1–240, default `30` |
+
+Each row is validated on its own: a missing name, a non-numeric or out-of-range coordinate, or a
+duplicate name fails that row with its reason while the rest of the file still imports.
 
 ### Run locally
 Fill your URL + anon key into `dashboard/config.js` (replacing the `__SUPABASE_URL__` /
@@ -236,14 +281,19 @@ supabase/duty_flow.sql           # work_minutes, face template, 30-min buffer, l
 supabase/face_template_v2.sql    # one-time v1 -> v2 face template upgrade
 supabase/strict_monitor.sql      # day-quality flags, left-area auto check-out, check-out reason
 supabase/shifts_nodal.sql        # shift per assignment, employee code, nodal category + visits
-dashboard/                       # no-build web admin (index.html, app.js, config.js, styles.css)
+supabase/bulk_kendras.sql        # admin_bulk_kendras() — bulk kendra upload with per-row checks
+supabase/face_auth_v3.sql        # device authorization, supervised enrollment, single-use challenges
+supabase/tests/                 # isolated in-memory PostgreSQL authorization regression tests
+dashboard/                       # no-build web admin (index.html, app.js, config.js)
 app/src/main/java/com/vsk/attendance/
   MainActivity.kt                # entry, permission gate, staff-only routing
   data/{Models,SupabaseApi,SessionStore}.kt
   util/GeoUtils.kt               # Haversine + IST clock
   location/{LocationHelper,AttendanceRules}.kt
-  face/{FaceGeometry,FaceCaptureCard}.kt  # geometry + appearance template match, CameraX capture
+  face/{FaceTemplate,FaceCheckSession,FaceEngine,FaceCaptureCard}.kt
   ui/{MainViewModel,LoginScreen,FaceEnrollScreen,AttendanceScreen}.kt + theme/
+app/src/main/assets/face/        # pinned local models, checksums, licenses and conversion provenance
+app/src/test/                    # JVM template and capture-session regression tests
 .github/workflows/               # build-apk.yml, deploy-dashboard.yml
 ```
 
@@ -286,10 +336,11 @@ Early present pulse + many absent pulses = "came, then left." No check-in + no p
 ---
 
 ## Security model
-- **Field staff (Android):** mobile-number-only login by design. The geofence + server-side
-  validation stop fake-location attendance, and pulses prove continued presence — but the account
-  itself is not strongly authenticated. Add OTP (Supabase Phone Auth or an OTP table + per-user
-  JWT) for production hardening.
+- **Field staff (Android):** mobile-number login on an administrator-activated installation.
+  A cryptographically random 256-bit device token authorizes staff RPCs; only its SHA-256 hash is
+  stored server-side. Knowing a mobile number or staff UUID no longer authorizes access. Manual
+  punches require a short-lived, one-use challenge bound to the device, action and enrollment revision.
+  These credentials do not prove that an untampered device actually performed biometric verification.
 - **Admins (web):** email/password via Supabase Auth, and every admin RPC calls `assert_admin()`
   which checks `auth.uid()` against the `admins` allow-list. The old spoofable `p_admin_id`
   functions were dropped. RLS locks all tables; access is only through SECURITY DEFINER functions.
@@ -297,8 +348,24 @@ Early present pulse + many absent pulses = "came, then left." No check-in + no p
 
 ---
 
-## Notes & limits
+## Verification and limits
+
+- JVM face tests: `gradle testDebugUnitTest` with the Android toolchain. Fifty template/session tests
+  also passed using the Kotlin 2.0.21 JVM compiler directly, without installing an Android SDK.
+- SQL regressions: `npm ci --prefix supabase/tests` then `npm test --prefix supabase/tests`.
+  This creates a disposable in-memory PostgreSQL database, applies all nine migrations, tests 110
+  authorization/activation/challenge assertions, and reruns migration 9 on empty and populated state.
+  It uses no Supabase credentials or live connections. Do not paste the test fixture into a live database.
+- Model qualification: pinned file hashes checked; MiniFASNet ONNX initializers matched the upstream
+  checkpoint exactly after conversion transforms. OpenCV 4.12 desktop CPU synthetic inference passed
+  for all three packaged models. The Kotlin engine compiled against actual OpenCV Java APIs with
+  minimal Android stubs. These checks are **not an Android APK build or biometric accuracy test**.
+- Dashboard activation/reset, failure/retry, narrow layouts, assignments and bulk-upload browser
+  regressions passed in isolated preview mode, with production API access blocked.
+- Full APK compilation, Android ARM/JNI execution, camera UI and real-person/attack validation remain
+  required on physical phones. The current CI build workflow does not run JVM tests automatically;
+  run the test command as part of release validation before distributing the APK.
 - Attendance tracking is **foreground only** (app open). Working with the app closed needs Android
   background-location permission + a foreground service + battery-optimization handling.
-- The code has not been compiled in this environment; the first APK build happens in CI or on your
-  machine. Fix any version nits that surface there.
+- Backend tests do not cover simultaneous multi-client transactions or live Supabase deployment.
+  Automatic day-end checkout currently supports same-day shifts only.

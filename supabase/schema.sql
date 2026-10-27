@@ -66,7 +66,7 @@ create table if not exists public.attendance (
   status             text not null default 'present'
                      check (status in ('present','late')),
   work_minutes       integer,                             -- total duty duration, set at check-out
-  check_out_reason   text                                 -- manual / day_end / left_area
+  check_out_reason   text,                                -- manual / day_end / left_area
   unique (staff_id, day)
 );
 
@@ -583,7 +583,7 @@ $$;
 grant execute on function public.login_by_mobile(text) to anon, authenticated;
 grant execute on function public.record_check_in(uuid, double precision, double precision) to anon, authenticated;
 grant execute on function public.record_pulse(uuid, double precision, double precision) to anon, authenticated;
-grant execute on function public.record_check_out(uuid, double precision, double precision) to anon, authenticated;
+grant execute on function public.record_check_out(uuid, double precision, double precision, text) to anon, authenticated;
 grant execute on function public.get_today(uuid) to anon, authenticated;
 grant execute on function public.get_history(uuid, date, date) to anon, authenticated;
 grant execute on function public.save_face_template(uuid, text) to anon, authenticated;

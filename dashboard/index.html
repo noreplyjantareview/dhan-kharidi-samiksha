@@ -184,10 +184,14 @@
         <!-- Bulk -->
         <section data-panel="bulk" class="hidden space-y-4">
           <div class="min-w-0 rounded-[14px] border border-[#e6e9f0] bg-white shadow-[0_1px_2px_rgba(15,23,42,.04),0_8px_24px_-18px_rgba(15,23,42,.35)] p-5 space-y-4">
+            <div id="bulkModeBtns" class="flex flex-wrap items-center gap-2" role="group" aria-label="What to upload">
+              <button type="button" data-bulk-mode="staff" aria-current="true" class="rounded-full px-4 py-[7px] text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 aria-[current=true]:bg-blue-600 aria-[current=true]:text-white aria-[current=true]:shadow-[0_6px_16px_-8px_rgba(37,99,235,.9)] aria-[current=false]:border aria-[current=false]:border-[#d7dce6] aria-[current=false]:bg-white aria-[current=false]:text-slate-600 aria-[current=false]:hover:bg-slate-50">Staff</button>
+              <button type="button" data-bulk-mode="kendra" aria-current="false" class="rounded-full px-4 py-[7px] text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 aria-[current=true]:bg-blue-600 aria-[current=true]:text-white aria-[current=true]:shadow-[0_6px_16px_-8px_rgba(37,99,235,.9)] aria-[current=false]:border aria-[current=false]:border-[#d7dce6] aria-[current=false]:bg-white aria-[current=false]:text-slate-600 aria-[current=false]:hover:bg-slate-50">Kendras</button>
+            </div>
             <div class="flex items-center justify-between flex-wrap gap-3">
-              <div>
-                <h3 class="font-bold">Bulk enroll from Excel</h3>
-                <p class="text-sm text-slate-500 mt-1">Columns: <b>Full name</b>, <b>Employee code</b>, <b>Mobile number</b>, <b>Role</b> (staff/admin), <b>Category</b> (staff/nodal), <b>Kendra name(s)</b> (comma-separated for nodal), <b>Check-in time</b> and <b>Day ends</b> (optional, for staff). Kendras must already exist.</p>
+              <div class="min-w-0">
+                <h3 id="bulkTitle" class="font-bold">Bulk enroll staff from Excel</h3>
+                <p id="bulkHint" class="text-sm text-slate-500 mt-1">Columns: <b>Full name</b>, <b>Employee code</b>, <b>Mobile number</b>, <b>Role</b> (staff/admin), <b>Category</b> (staff/nodal), <b>Kendra name(s)</b> (comma-separated for nodal), <b>Check-in time</b> and <b>Day ends</b> (optional, for staff). Kendras must already exist — upload them first under <b>Kendras</b> above.</p>
               </div>
               <button id="tplBtn" class="inline-flex max-w-full items-center justify-center gap-2 rounded-[9px] border border-[#d7dce6] bg-white px-4 py-[9px] text-[13px] font-semibold text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60">Download template (.xlsx)</button>
             </div>
@@ -208,6 +212,57 @@
 
       </div>
     </main>
+  </div>
+
+  <!-- Administrator-only phone activation; codes are cleared on close/sign-out. -->
+  <div id="faceActivationModal" class="hidden fixed inset-0 z-[65] items-center justify-center bg-slate-900/50 p-3 backdrop-blur-sm sm:p-4" role="dialog" aria-modal="true" aria-labelledby="faceActivationTitle" aria-describedby="faceActivationName faceActivationIdentity">
+    <div class="max-h-[90dvh] w-full min-w-0 max-w-lg overflow-y-auto overscroll-contain rounded-2xl bg-white shadow-2xl">
+      <div class="flex items-start justify-between gap-3 border-b border-slate-200 p-4 sm:p-5">
+        <div class="min-w-0 break-words">
+          <h3 id="faceActivationTitle" tabindex="-1" class="rounded font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600">Activate phone</h3>
+          <p id="faceActivationName" class="mt-1 text-sm text-slate-500"></p>
+        </div>
+        <button id="faceActivationClose" type="button" aria-label="Close phone activation dialog" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-2xl leading-none text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600">&times;</button>
+      </div>
+      <div class="space-y-4 break-words p-4 text-sm sm:p-5">
+        <p id="faceActivationPreview" class="hidden rounded-lg border border-violet-200 bg-violet-50 p-3 font-semibold text-violet-800">PREVIEW ONLY — an obvious non-secret dummy code and fake expiry. It cannot activate a phone; no production request is made.</p>
+        <div class="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-900">
+          <p id="faceActivationIdentity" class="font-semibold">Personally verify this employee's identity before issuing a code. Share the code privately with that employee only.</p>
+          <p>The code expires in <b>15 minutes</b>, is for <b>one use</b>, and locks after <b>5 wrong attempts</b>.</p>
+          <p>Issuing a code <b>does not revoke the current phone</b>. Only successful code redemption replaces it.</p>
+        </div>
+        <form id="faceActivationForm" class="space-y-4" aria-busy="false">
+          <fieldset class="min-w-0 space-y-3">
+            <legend class="mb-2 font-semibold">Choose the activation action</legend>
+            <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3">
+              <input id="faceActivationKeep" type="radio" name="faceActivationMode" value="keep" checked class="mt-1 h-4 w-4 shrink-0 accent-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 disabled:cursor-not-allowed" />
+              <span class="min-w-0"><b>Activate phone — keep enrolled face</b><span class="mt-1 block text-xs text-slate-500">Default. No face reset is requested. An old face version still needs a v3 upgrade in the app.</span></span>
+            </label>
+            <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-red-200 p-3">
+              <input id="faceActivationReset" type="radio" name="faceActivationMode" value="reset" class="mt-1 h-4 w-4 shrink-0 accent-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 disabled:cursor-not-allowed" />
+              <span class="min-w-0"><b>Activate phone and reset face</b><span class="mt-1 block text-xs text-slate-500">A separate reset action: new face enrollment is required AFTER successful code redemption, not when this code is issued.</span></span>
+            </label>
+          </fieldset>
+          <label id="faceResetConfirmWrap" class="hidden flex cursor-pointer items-start gap-3 rounded-lg bg-red-50 p-3 text-red-800">
+            <input id="faceResetConfirm" type="checkbox" class="mt-1 h-4 w-4 shrink-0 accent-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 disabled:cursor-not-allowed" />
+            <span class="min-w-0">I confirm the face reset. I understand this employee must enroll their face again AFTER successful code redemption.</span>
+          </label>
+          <p id="faceActivationError" tabindex="-1" role="alert" class="hidden rounded-lg border border-red-200 bg-red-50 p-3 text-red-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-600"></p>
+          <button id="faceActivationIssue" type="submit" class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60">Issue activation code</button>
+        </form>
+        <p id="faceActivationStatus" role="status" class="text-sm font-semibold text-green-800"></p>
+        <div id="faceActivationResult" tabindex="-1" aria-labelledby="faceActivationCodeLabel" class="hidden space-y-2 rounded-xl border border-green-200 bg-green-50 p-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-600">
+          <h4 id="faceActivationCodeLabel" class="font-semibold text-green-900">Private activation code · administrator only</h4>
+          <code id="faceActivationCode" class="block break-all font-mono text-2xl font-bold tracking-widest text-slate-900"></code>
+          <p id="faceActivationExpiry" class="text-xs text-green-900"></p>
+          <p id="faceActivationOutcome" class="text-xs text-slate-700"></p>
+          <p class="text-xs text-slate-600">Closing this dialog clears the displayed code. Do not put it in a shared chat, screenshot, or log.</p>
+        </div>
+        <div class="flex justify-end border-t border-slate-200 pt-3">
+          <button id="faceActivationDone" type="button" class="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2">Close</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Assign kendra + shift modal -->

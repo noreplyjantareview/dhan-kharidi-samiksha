@@ -1,0 +1,6 @@
+{
+  "name": "vsk-face-authorization-tests",
+  "private": true,
+  "scripts": { "test": "node run.cjs" },
+  "devDependencies": { "@electric-sql/pglite": "0.5.12" }
+}

@@ -3,6 +3,7 @@ package com.vsk.attendance
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,7 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,11 +27,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.vsk.attendance.face.FaceGeometry
+import com.vsk.attendance.face.FaceTemplate
 import com.vsk.attendance.ui.AttendanceScreen
 import com.vsk.attendance.ui.FaceEnrollScreen
 import com.vsk.attendance.ui.LoginScreen
@@ -40,6 +44,7 @@ import com.vsk.attendance.ui.theme.VSKTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         setContent {
             VSKTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -81,17 +86,36 @@ fun App(vm: MainViewModel = viewModel()) {
         hasPerm = loc && cam
     }
 
-    LaunchedEffect(staff, hasPerm) {
-        val s = staff
-        if (s != null && s.role == "staff" && hasPerm) vm.startAttendance()
+    val currentFace = remember(staff?.faceTemplate) { FaceTemplate.isCurrent(staff?.faceTemplate) }
+    val needsEnrollment = !currentFace || staff?.faceEnrollmentAllowed == true
+    val canTrack = staff?.role == "staff" && !needsEnrollment && hasPerm
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    // Key by identity and eligibility, not the Staff copy refreshed by startAttendance().
+    DisposableEffect(lifecycle, vm, staff?.id, canTrack) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> {
+                    hasPerm = hasLocationPermission(context) && hasCameraPermission(context)
+                    if (canTrack && hasPerm) vm.startAttendance() else vm.stopAttendance()
+                }
+                Lifecycle.Event.ON_PAUSE -> vm.stopAttendance()
+                else -> Unit
+            }
+        }
+        lifecycle.addObserver(observer)
+        if (canTrack && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) vm.startAttendance()
+        else vm.stopAttendance()
+        onDispose {
+            lifecycle.removeObserver(observer)
+            vm.stopAttendance()
+        }
     }
 
     when {
         staff == null -> LoginScreen(vm)
-        staff?.role == "admin" -> AdminNotice(vm)
+        staff?.role != "staff" -> AdminNotice(vm)
         !hasPerm -> PermissionGate { permissionLauncher.launch(REQUIRED_PERMISSIONS) }
-        staff?.faceTemplate == null || FaceGeometry.needsReenroll(staff?.faceTemplate.orEmpty()) ->
-            FaceEnrollScreen(vm)
+        needsEnrollment -> FaceEnrollScreen(vm)
         else -> AttendanceScreen(vm)
     }
 }

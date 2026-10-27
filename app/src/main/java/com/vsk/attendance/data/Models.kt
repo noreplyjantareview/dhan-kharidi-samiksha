@@ -11,7 +11,9 @@ data class Staff(
     @SerialName("mobile_number") val mobileNumber: String,
     val role: String,
     val category: String = "staff",          // staff = one kendra + shift, nodal = visits many
-    @SerialName("face_template") val faceTemplate: String? = null
+    @SerialName("face_template") val faceTemplate: String? = null,
+    @SerialName("face_enrollment_allowed") val faceEnrollmentAllowed: Boolean = false,
+    @SerialName("face_revision") val faceRevision: String? = null
 ) {
     val isNodal: Boolean get() = category == "nodal"
 }
@@ -37,8 +39,21 @@ data class Kendra(
 data class LoginResult(
     val ok: Boolean = false,
     val error: String? = null,
+    val reason: String? = null,
     val staff: Staff? = null,
-    val kendras: List<Kendra> = emptyList()
+    val kendras: List<Kendra> = emptyList(),
+    @SerialName("face_revision") val faceRevision: String? = null
+)
+
+@Serializable
+data class FaceCheckResult(
+    val ok: Boolean = false,
+    val error: String? = null,
+    val reason: String? = null,
+    @SerialName("challenge_id") val challengeId: String? = null,
+    val turn: String? = null,
+    @SerialName("expires_in") val expiresIn: Int = 90,
+    @SerialName("face_revision") val faceRevision: String? = null
 )
 
 @Serializable
@@ -70,7 +85,8 @@ data class ActionResult(
     @SerialName("absent_count") val absentCount: Int? = null,
     @SerialName("work_minutes") val workMinutes: Int? = null,
     @SerialName("auto_checked_out") val autoCheckedOut: Boolean? = null,
-    @SerialName("check_out_reason") val checkOutReason: String? = null
+    @SerialName("check_out_reason") val checkOutReason: String? = null,
+    @SerialName("face_revision") val faceRevision: String? = null
 )
 
 @Serializable
@@ -94,6 +110,8 @@ data class Visit(
 @Serializable
 data class TodayResult(
     val ok: Boolean = false,
+    val error: String? = null,
+    val reason: String? = null,
     val day: String? = null,
     val category: String? = null,
     val record: TodayRecord? = null,
