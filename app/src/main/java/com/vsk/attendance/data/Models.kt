@@ -9,7 +9,8 @@ data class Staff(
     @SerialName("full_name") val fullName: String,
     @SerialName("mobile_number") val mobileNumber: String,
     val role: String,
-    @SerialName("duty_type") val dutyType: String
+    @SerialName("duty_type") val dutyType: String,
+    @SerialName("face_template") val faceTemplate: String? = null
 )
 
 @Serializable
@@ -53,7 +54,8 @@ data class ActionResult(
     val inside: Boolean? = null,
     val at: String? = null,
     @SerialName("present_count") val presentCount: Int? = null,
-    @SerialName("absent_count") val absentCount: Int? = null
+    @SerialName("absent_count") val absentCount: Int? = null,
+    @SerialName("work_minutes") val workMinutes: Int? = null
 )
 
 @Serializable
@@ -61,7 +63,8 @@ data class TodayRecord(
     val status: String? = null,
     @SerialName("check_in_at") val checkInAt: String? = null,
     @SerialName("check_out_at") val checkOutAt: String? = null,
-    @SerialName("check_in_kendra") val checkInKendra: String? = null
+    @SerialName("check_in_kendra") val checkInKendra: String? = null,
+    @SerialName("work_minutes") val workMinutes: Int? = null
 )
 
 @Serializable

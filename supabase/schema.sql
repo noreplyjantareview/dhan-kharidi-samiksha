@@ -26,8 +26,8 @@ create table if not exists public.kendras (
   latitude          double precision not null,
   longitude         double precision not null,
   radius_m          integer not null default 100,        -- geofence radius (metres)
-  check_in_start    time not null default '08:00',       -- IST arrival window opens
-  check_in_end      time not null default '10:00',       -- IST arrival window closes
+  check_in_start    time not null default '08:00',       -- IST arrival time
+  check_in_end      time not null default '08:30',       -- auto = start + 30 min buffer
   day_end           time not null default '18:00',       -- IST auto check-out deadline
   verify_interval_min integer not null default 30,       -- periodic presence re-check (minutes)
   created_at        timestamptz not null default now()
@@ -41,6 +41,7 @@ create table if not exists public.staff (
                 check (role in ('staff','admin')),
   duty_type     text not null default 'fixed'
                 check (duty_type in ('fixed','multi')),
+  face_template text,                                     -- normalized face geometry, set once
   created_at    timestamptz not null default now()
 );
 
@@ -64,6 +65,7 @@ create table if not exists public.attendance (
   check_out_long     double precision,
   status             text not null default 'present'
                      check (status in ('present','late')),
+  work_minutes       integer,                             -- total duty duration, set at check-out
   unique (staff_id, day)
 );
 
@@ -156,7 +158,8 @@ begin
       'full_name', v_staff.full_name,
       'mobile_number', v_staff.mobile_number,
       'role', v_staff.role,
-      'duty_type', v_staff.duty_type
+      'duty_type', v_staff.duty_type,
+      'face_template', v_staff.face_template
     ),
     'kendras', coalesce((
       select jsonb_agg(jsonb_build_object(
@@ -212,7 +215,7 @@ begin
       'kendra_id', v_att.check_in_kendra_id, 'distance_m', round(v_k.dist_m::numeric,1));
   end if;
 
-  v_status := case when v_now::time > (v_k.win_start + interval '30 minutes') then 'late' else 'present' end;
+  v_status := case when v_now::time > (v_k.win_start + interval '15 minutes') then 'late' else 'present' end;
 
   insert into public.attendance (staff_id, day, check_in_at, check_in_kendra_id, check_in_lat, check_in_long, status)
   values (p_staff_id, v_date, now(), v_k.kendra_id, p_lat, p_long, v_status)
@@ -284,6 +287,7 @@ declare
   v_date date := ((now() at time zone 'Asia/Kolkata')::date);
   v_att  public.attendance%rowtype;
   v_k    record;
+  v_min  integer;
 begin
   select * into v_att from public.attendance where staff_id = p_staff_id and day = v_date;
   if v_att.id is null or v_att.check_in_at is null then
@@ -291,20 +295,24 @@ begin
   end if;
   if v_att.check_out_at is not null then
     return jsonb_build_object('ok', true, 'status', 'already', 'message', 'Already checked out for today.',
-      'check_out_at', to_char(v_att.check_out_at at time zone 'Asia/Kolkata','HH24:MI:SS'));
+      'check_out_at', to_char(v_att.check_out_at at time zone 'Asia/Kolkata','HH24:MI:SS'),
+      'work_minutes', v_att.work_minutes);
   end if;
 
   select * into v_k from public.match_allowed_kendra(p_staff_id, p_lat, p_long) limit 1;
+  v_min := round(extract(epoch from (now() - v_att.check_in_at)) / 60.0)::integer;
 
   update public.attendance
      set check_out_at = now(),
          check_out_kendra_id = v_k.kendra_id,
          check_out_lat = p_lat,
-         check_out_long = p_long
+         check_out_long = p_long,
+         work_minutes = v_min
    where id = v_att.id;
 
   return jsonb_build_object('ok', true, 'status', 'checked_out', 'message', 'Check-out recorded.',
-    'check_out_at', to_char((now() at time zone 'Asia/Kolkata'),'HH24:MI:SS'));
+    'check_out_at', to_char((now() at time zone 'Asia/Kolkata'),'HH24:MI:SS'),
+    'work_minutes', v_min);
 end;
 $$;
 
@@ -337,7 +345,8 @@ begin
       'status', v_att.status,
       'check_in_at',  to_char(v_att.check_in_at  at time zone 'Asia/Kolkata','HH24:MI:SS'),
       'check_out_at', to_char(v_att.check_out_at at time zone 'Asia/Kolkata','HH24:MI:SS'),
-      'check_in_kendra', v_kname
+      'check_in_kendra', v_kname,
+      'work_minutes', v_att.work_minutes
     ) end,
     'present_count', coalesce(v_p,0),
     'absent_count',  coalesce(v_a,0),
@@ -404,7 +413,7 @@ begin
     (name, latitude, longitude, radius_m, check_in_start, check_in_end, day_end, verify_interval_min)
   values
     (p_name, p_lat, p_long, coalesce(p_radius_m,100),
-     coalesce(p_check_in_start,'08:00'), coalesce(p_check_in_end,'10:00'),
+     p_check_in_start, p_check_in_start + interval '30 minutes',
      coalesce(p_day_end,'18:00'), coalesce(p_verify_interval_min,30))
   returning id into v_id;
   return jsonb_build_object('ok', true, 'id', v_id);
@@ -493,6 +502,22 @@ begin
 end;
 $$;
 
+-- Face enrollment: store the normalized face-geometry template ONCE.
+create or replace function public.save_face_template(p_staff_id uuid, p_template text)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+begin
+  if coalesce(btrim(p_template), '') = '' or length(p_template) > 20000 then
+    return jsonb_build_object('ok', false, 'error', 'Invalid face template.');
+  end if;
+  if exists (select 1 from public.staff where id = p_staff_id and face_template is not null) then
+    return jsonb_build_object('ok', false, 'error', 'Face already registered for this user.');
+  end if;
+  update public.staff set face_template = btrim(p_template) where id = p_staff_id;
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
 -- ---------------------------------------------------------------------
 -- Grants
 -- ---------------------------------------------------------------------
@@ -502,6 +527,7 @@ grant execute on function public.record_pulse(uuid, double precision, double pre
 grant execute on function public.record_check_out(uuid, double precision, double precision) to anon, authenticated;
 grant execute on function public.get_today(uuid) to anon, authenticated;
 grant execute on function public.get_history(uuid, date, date) to anon, authenticated;
+grant execute on function public.save_face_template(uuid, text) to anon, authenticated;
 grant execute on function public.admin_list_kendras(uuid) to anon, authenticated;
 grant execute on function public.admin_create_kendra(uuid, text, double precision, double precision, integer, time, time, time, integer) to anon, authenticated;
 grant execute on function public.admin_list_staff(uuid) to anon, authenticated;

@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vsk.attendance.ui.AttendanceScreen
+import com.vsk.attendance.ui.FaceEnrollScreen
 import com.vsk.attendance.ui.LoginScreen
 import com.vsk.attendance.ui.MainViewModel
 import com.vsk.attendance.ui.theme.VSKTheme
@@ -48,27 +49,35 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private val LOCATION_PERMISSIONS = arrayOf(
+private val REQUIRED_PERMISSIONS = arrayOf(
     Manifest.permission.ACCESS_FINE_LOCATION,
-    Manifest.permission.ACCESS_COARSE_LOCATION
+    Manifest.permission.ACCESS_COARSE_LOCATION,
+    Manifest.permission.CAMERA
 )
 
 private fun hasLocationPermission(context: android.content.Context): Boolean =
-    LOCATION_PERMISSIONS.any {
+    REQUIRED_PERMISSIONS.dropLast(1).any {
         ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
     }
+
+private fun hasCameraPermission(context: android.content.Context): Boolean =
+    ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
 
 @Composable
 fun App(vm: MainViewModel = viewModel()) {
     val staff by vm.staff.collectAsState()
     val context = LocalContext.current
-    var hasPerm by remember { mutableStateOf(hasLocationPermission(context)) }
+    var hasPerm by remember {
+        mutableStateOf(hasLocationPermission(context) && hasCameraPermission(context))
+    }
 
     val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result ->
-        hasPerm = result[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+        val loc = result[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
                 result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        val cam = result[Manifest.permission.CAMERA] == true
+        hasPerm = loc && cam
     }
 
     LaunchedEffect(staff, hasPerm) {
@@ -79,10 +88,9 @@ fun App(vm: MainViewModel = viewModel()) {
     when {
         staff == null -> LoginScreen(vm)
         staff?.role == "admin" -> AdminNotice(vm)
-        else -> {
-            if (hasPerm) AttendanceScreen(vm)
-            else PermissionGate { permissionLauncher.launch(LOCATION_PERMISSIONS) }
-        }
+        !hasPerm -> PermissionGate { permissionLauncher.launch(REQUIRED_PERMISSIONS) }
+        staff?.faceTemplate == null -> FaceEnrollScreen(vm)
+        else -> AttendanceScreen(vm)
     }
 }
 
@@ -113,15 +121,16 @@ private fun PermissionGate(onRequest: () -> Unit) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("Location permission required", fontWeight = FontWeight.Bold,
+        Text("Location + camera required", fontWeight = FontWeight.Bold,
             style = MaterialTheme.typography.titleLarge)
         Text(
-            "This app reads your device GPS to verify you are present at your assigned duty kendra " +
-                    "and to auto-mark attendance. Location is only used while the app is open.",
+            "Location verifies you are present at your assigned duty kendra. The camera is used " +
+                    "only for the face check when you go On Duty or Off Duty — no photos are stored. " +
+                    "Both are used only while the app is open.",
             modifier = Modifier.padding(top = 8.dp, bottom = 20.dp)
         )
         Button(onClick = onRequest, modifier = Modifier.fillMaxWidth().height(50.dp)) {
-            Text("Grant location permission")
+            Text("Grant permissions")
         }
     }
 }

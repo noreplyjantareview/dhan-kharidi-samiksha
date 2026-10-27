@@ -1,5 +1,6 @@
 package com.vsk.attendance.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -7,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -36,44 +38,61 @@ fun LoginScreen(vm: MainViewModel) {
     var mobile by rememberSaveable { mutableStateOf("") }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF1D4ED8))
+            .padding(24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("Dhan Kharidi Samiksha", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("Field-staff duty attendance", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Dhan Kharidi Samiksha", style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold, color = Color.White)
+            Text("Field-staff duty attendance", style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.8f))
+        }
         Spacer(Modifier.height(28.dp))
 
-        if (configError != null) {
-            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFFFE0E0)), modifier = Modifier.fillMaxWidth()) {
-                Text(configError!!, modifier = Modifier.padding(12.dp), color = Color(0xFFB00020))
-            }
-            Spacer(Modifier.height(16.dp))
-        }
-
-        OutlinedTextField(
-            value = mobile,
-            onValueChange = { if (it.length <= 10) mobile = it.filter(Char::isDigit) },
-            label = { Text("Registered mobile number") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(Modifier.height(16.dp))
-
-        Button(
-            onClick = { vm.login(mobile) },
-            enabled = !busy && mobile.length == 10,
-            modifier = Modifier.fillMaxWidth().height(50.dp)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
         ) {
-            if (busy) CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp,
-                modifier = Modifier.height(22.dp))
-            else Text("Login", fontSize = MaterialTheme.typography.titleMedium.fontSize)
-        }
+            Column(Modifier.padding(20.dp)) {
+                if (configError != null) {
+                    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFFFE0E0)),
+                        modifier = Modifier.fillMaxWidth()) {
+                        Text(configError!!, modifier = Modifier.padding(12.dp), color = Color(0xFFB00020))
+                    }
+                    Spacer(Modifier.height(16.dp))
+                }
 
-        if (error != null) {
-            Spacer(Modifier.height(12.dp))
-            Text(error!!, color = Color(0xFFB00020))
+                OutlinedTextField(
+                    value = mobile,
+                    onValueChange = { if (it.length <= 10) mobile = it.filter(Char::isDigit) },
+                    label = { Text("Registered mobile number") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(16.dp))
+
+                Button(
+                    onClick = { vm.login(mobile) },
+                    enabled = !busy && mobile.length == 10,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth().height(52.dp)
+                ) {
+                    if (busy) CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp,
+                        modifier = Modifier.height(22.dp))
+                    else Text("Login", fontSize = MaterialTheme.typography.titleMedium.fontSize)
+                }
+
+                if (error != null) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(error!!, color = Color(0xFFDC2626))
+                }
+            }
         }
     }
 }

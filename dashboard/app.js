@@ -114,15 +114,15 @@
     veil(false);
     if (error) { toast(error.message, "err"); return; }
     const cards = [
-      ["Present today", data.present_today, "text-green-600"],
-      ["Absent today", data.absent_today, "text-red-600"],
-      ["Late today", data.late_today, "text-amber-600"],
-      ["Checked out", data.checked_out_today, "text-slate-600"],
-      ["Total staff", data.total_staff, "text-blue-700"],
-      ["Kendras", data.total_kendras, "text-blue-700"],
+      ["Present today", data.present_today, "text-green-600", "border-t-green-500"],
+      ["Absent today", data.absent_today, "text-red-600", "border-t-red-500"],
+      ["Late today", data.late_today, "text-amber-600", "border-t-amber-500"],
+      ["Checked out", data.checked_out_today, "text-slate-600", "border-t-slate-400"],
+      ["Total staff", data.total_staff, "text-blue-700", "border-t-blue-600"],
+      ["Kendras", data.total_kendras, "text-blue-700", "border-t-blue-600"],
     ];
-    $("#statCards").innerHTML = cards.map(([label, val, color]) => `
-      <div class="bg-white rounded-xl border border-slate-200 p-4">
+    $("#statCards").innerHTML = cards.map(([label, val, color, accent]) => `
+      <div class="bg-white rounded-xl border border-slate-200 border-t-4 ${accent} p-4">
         <div class="text-xs text-slate-500">${label}</div>
         <div class="text-2xl font-bold ${color} mt-1">${val ?? 0}</div>
       </div>`).join("");
@@ -152,7 +152,7 @@
     $("#logsTable").innerHTML = `
       <thead><tr>
         <th>Date</th><th>Staff</th><th>Mobile</th><th>Kendra</th>
-        <th>Check-in</th><th>Check-out</th><th>Status</th><th>Present</th><th>Absent</th>
+        <th>Check-in</th><th>Check-out</th><th>Work time</th><th>Status</th><th>Present</th><th>Absent</th>
       </tr></thead>
       <tbody>${rows.map((r) => `
         <tr>
@@ -162,10 +162,15 @@
           <td>${esc(r.kendra || "—")}</td>
           <td>${esc(r.check_in_at || "—")}</td>
           <td>${esc(r.check_out_at || "—")}</td>
+          <td>${fmtWork(r.work_minutes)}</td>
           <td>${statusBadge(r.status)}</td>
           <td class="text-green-600 font-semibold">${r.present_count ?? 0}</td>
           <td class="${(r.absent_count ?? 0) > 0 ? "text-red-600 font-semibold" : "text-slate-400"}">${r.absent_count ?? 0}</td>
         </tr>`).join("")}</tbody>`;
+  }
+  function fmtWork(m) {
+    if (m === null || m === undefined) return "—";
+    return `${Math.floor(m / 60)}h ${m % 60}m`;
   }
   function statusBadge(s) {
     if (!s) return "—";
@@ -247,7 +252,6 @@
       p_long: parseFloat($("#kLon").value),
       p_radius_m: parseInt($("#kRadius").value || "100", 10),
       p_check_in_start: $("#kInStart").value || "08:00",
-      p_check_in_end: $("#kInEnd").value || "10:00",
       p_day_end: $("#kDayEnd").value || "18:00",
       p_verify_interval_min: parseInt($("#kVerify").value || "30", 10),
     });
@@ -271,7 +275,6 @@
     $("#keRadius").value = k.radius_m;
     $("#keVerify").value = k.verify_interval_min;
     $("#keInStart").value = k.check_in_start;
-    $("#keInEnd").value = k.check_in_end;
     $("#keDayEnd").value = k.day_end;
     const m = $("#kendraEditModal");
     m.classList.remove("hidden"); m.classList.add("flex");
@@ -294,7 +297,6 @@
       p_longitude: parseFloat($("#keLon").value),
       p_radius_m: parseInt($("#keRadius").value, 10),
       p_check_in_start: $("#keInStart").value || null,
-      p_check_in_end: $("#keInEnd").value || null,
       p_day_end: $("#keDayEnd").value || null,
       p_verify_interval_min: parseInt($("#keVerify").value, 10),
     });

@@ -72,4 +72,9 @@ class SupabaseApi {
         rpc("get_history", buildJsonObject {
             put("p_staff_id", staffId); put("p_from", from); put("p_to", to)
         })
+
+    suspend fun saveFaceTemplate(staffId: String, template: String): ActionResult =
+        rpc("save_face_template", buildJsonObject {
+            put("p_staff_id", staffId); put("p_template", template)
+        })
 }

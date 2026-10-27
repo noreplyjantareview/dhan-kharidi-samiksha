@@ -5,8 +5,9 @@ staff actually report to, and stay at, their assigned duty location (**kendra**)
 
 Two parts, one Supabase backend:
 
-1. **Android app** (Kotlin + Compose) — for **field staff**. Mobile-number login, auto geofenced
-   check-in/out, and periodic presence re-verification. **Staff-only** (no admin here).
+1. **Android app** (Kotlin + Compose) — for **field staff**. Mobile-number login, one-time face
+   registration, face-verified **On Duty / Off Duty** buttons, geofence validation and periodic
+   presence re-verification. **Staff-only** (no admin here).
 2. **Web admin dashboard** (no-build static site) — for **district administration**. Email/password
    login. View all attendance logs, manage kendras & staff, assign duty locations, and **bulk
    enroll from Excel**.
@@ -21,18 +22,33 @@ the dashboard · GitHub Actions to build the APK and deploy the dashboard.
 ```
 Staff opens app → types registered mobile → login_by_mobile() returns the staff
                     record + their allowed kendra list (fixed = 1, multi = several)
-        │
+        │  first login only: face registration (geometry template stored, no photo)
         ▼
-App streams GPS (foreground) → AttendanceRules.decide()
-        ├─ not checked in + inside an allowed kendra + within window → record_check_in()
-        ├─ checked in + every verify_interval_min                     → record_pulse() (present/absent)
-        └─ checked in + at/after day_end                              → record_check_out()
+App streams GPS (foreground) while open
+        ├─ staff taps "On Duty"  → face check vs stored template → record_check_in()
+        ├─ every verify_interval_min while on duty               → record_pulse() (present/absent)
+        ├─ staff taps "Off Duty" → face check vs stored template → record_check_out()
+        └─ forgotten? at/after day_end the app auto-checks-out   → record_check_out()
         ▼
-Server re-validates the geofence distance + IST window before writing anything
+Server re-validates the geofence distance + IST window before writing anything.
+Check-out stores work_minutes (total duty duration). On Duty stays locked for the day after that.
 ```
+
+Check-in window: the admin picks one **check-in time**; the window closes automatically
+**30 minutes** later (16:00 → last check-in 16:30). Arrivals more than **15 minutes** after the
+check-in time are flagged `late`.
 
 Presence pulses are the anti-absenteeism trail: arriving-then-leaving, or never staying, shows up
 as absent pulses. Geofence math and windows are enforced server-side.
+
+### Face verification (proxy-attendance deterrent)
+
+- At first login the staff captures one selfie **in the app**; only the normalized face geometry
+  (landmarks + jaw contour, scaled/rotated/translated to eye reference) is stored on the staff
+  record — **no photo is stored or uploaded, ever**.
+- Every On Duty / Off Duty opens the camera, requires one clear frontal face, and compares its
+  geometry against the stored template. A mismatch refuses the punch.
+- The template is enroll-once: `save_face_template()` rejects later overwrites.
 
 ---
 
@@ -45,6 +61,9 @@ Run **all** migrations in the Supabase **SQL Editor** (New query → paste → R
    secured dashboard RPCs (also drops the old insecure admin functions).
 3. [`supabase/kendra_edit.sql`](supabase/kendra_edit.sql) — `admin_update_kendra()` so kendras
    (lat/long, radius, time windows) can be edited from the dashboard.
+4. [`supabase/duty_flow.sql`](supabase/duty_flow.sql) — On/Off Duty flow: `work_minutes` stored at
+   check-out, face-template column + `save_face_template()`, 30-min check-in buffer, 15-min late
+   rule, and the new fields in `get_today` / `admin_attendance_log` / `login_by_mobile`.
 
 All are re-runnable. Verification `SELECT`s at the bottom of each confirm success.
 
@@ -99,12 +118,12 @@ notice pointing them to the web dashboard.
 A no-build static site in [`dashboard/`](dashboard). Features:
 
 - **Overview** — present / absent / late / checked-out today, total staff & kendras.
-- **Attendance logs** — filter by date range, kendra, and name/mobile; shows check-in/out, status,
-  and per-day present/absent pulse counts.
+- **Attendance logs** — filter by date range, kendra, and name/mobile; shows check-in/out, total
+  work time, status, and per-day present/absent pulse counts.
 - **Staff** — enroll one at a time, and **Assign** allowed kendra(s) (fixed = one, multi = several).
-- **Kendras** — create with lat/long, radius, arrival window, day-end, verify interval; **Edit**
-  any kendra later (e.g. correct its lat/long). Staff phones pick up the new location the next
-  time they open the app.
+- **Kendras** — create with lat/long, radius, one check-in time (+30 min buffer automatic), day-end,
+  verify interval; **Edit** any kendra later (e.g. correct its lat/long). Staff phones pick up the
+  new location the next time they open the app.
 - **Bulk upload** — upload an `.xlsx`, preview, and enroll many staff at once with per-row results.
   A **Download template** button generates the sheet.
 
@@ -154,13 +173,15 @@ Push this folder to a GitHub repo. Two workflows run automatically:
 supabase/schema.sql              # base: tables + staff/attendance RPCs
 supabase/admin_dashboard.sql     # admin auth + secured dashboard RPCs + bulk enroll
 supabase/kendra_edit.sql         # admin_update_kendra() — edit lat/long & windows
+supabase/duty_flow.sql           # work_minutes, face template, 30-min buffer, late rule
 dashboard/                       # no-build web admin (index.html, app.js, config.js, styles.css)
 app/src/main/java/com/vsk/attendance/
   MainActivity.kt                # entry, permission gate, staff-only routing
   data/{Models,SupabaseApi,SessionStore}.kt
   util/GeoUtils.kt               # Haversine + IST clock
   location/{LocationHelper,AttendanceRules}.kt
-  ui/{MainViewModel,LoginScreen,AttendanceScreen}.kt + theme/
+  face/{FaceGeometry,FaceCaptureCard}.kt  # landmark template match + CameraX capture
+  ui/{MainViewModel,LoginScreen,FaceEnrollScreen,AttendanceScreen}.kt + theme/
 .github/workflows/               # build-apk.yml, deploy-dashboard.yml
 ```
 
@@ -170,9 +191,12 @@ app/src/main/java/com/vsk/attendance/
 | Setting | Default | Meaning |
 |---|---|---|
 | `radius_m` | 100 | Geofence radius (metres) |
-| `check_in_start` / `check_in_end` | 08:00 / 10:00 | IST arrival window |
+| `check_in_start` | 08:00 | IST check-in time; window closes automatically at +30 min |
+| `check_in_end` | (auto) | Stored as `check_in_start + 30 min`; not editable |
 | `day_end` | 18:00 | IST auto check-out deadline |
 | `verify_interval_min` | 30 | Presence re-verification interval |
+
+Arrivals more than 15 minutes after `check_in_start` are stored as `late`.
 
 Staff `duty_type`: **fixed** = exactly one kendra (assigning replaces it); **multi** = several
 allowed kendras.

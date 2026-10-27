@@ -103,6 +103,7 @@ begin
         to_char(a.check_in_at  at time zone 'Asia/Kolkata','HH24:MI:SS') as check_in_at,
         to_char(a.check_out_at at time zone 'Asia/Kolkata','HH24:MI:SS') as check_out_at,
         a.status                                                      as status,
+        a.work_minutes                                                as work_minutes,
         coalesce(pc.cnt,0)                                            as present_count,
         coalesce(ac.cnt,0)                                            as absent_count
       from public.attendance a
@@ -159,7 +160,7 @@ begin
     (name, latitude, longitude, radius_m, check_in_start, check_in_end, day_end, verify_interval_min)
   values
     (btrim(p_name), p_lat, p_long, coalesce(p_radius_m,100),
-     coalesce(p_check_in_start,'08:00'), coalesce(p_check_in_end,'10:00'),
+     p_check_in_start, p_check_in_start + interval '30 minutes',
      coalesce(p_day_end,'18:00'), coalesce(p_verify_interval_min,30))
   returning id into v_id;
   return jsonb_build_object('ok', true, 'id', v_id);

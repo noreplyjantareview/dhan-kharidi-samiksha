@@ -29,6 +29,7 @@ data class AttendanceUi(
     val presentCount: Int = 0,
     val absentCount: Int = 0,
     val lastPulseAt: String? = null,
+    val workMinutes: Int? = null,
     val message: String = "Waiting for location…",
     val clock: String = "",
     val running: Boolean = false
@@ -61,6 +62,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var attendanceJob: Job? = null
     private var activeKendraId: String? = null
     private var lastPulseMillis: Long = 0L
+    private var lastLat: Double? = null
+    private var lastLon: Double? = null
 
     init {
         if (!api.configured) {
@@ -107,6 +110,87 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ------------------------------------------------------------------
+    // Manual, face-verified duty start / end
+    // ------------------------------------------------------------------
+    fun onDuty() {
+        val s = _staff.value ?: return
+        val lat = lastLat
+        val lon = lastLon
+        if (lat == null || lon == null) {
+            _attendance.value = _attendance.value.copy(
+                message = "Waiting for a GPS fix — move near a window or outside and try again."
+            )
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val r = api.checkIn(s.id, lat, lon)
+                if (r.status == "checked_in" || r.status == "already") {
+                    activeKendraId = r.kendraId ?: activeKendraId
+                    lastPulseMillis = System.currentTimeMillis()
+                    _attendance.value = _attendance.value.copy(
+                        checkInAt = r.checkInAt ?: _attendance.value.checkInAt,
+                        dayStatus = r.attendanceStatus ?: _attendance.value.dayStatus,
+                        checkInKendra = r.kendraName ?: _attendance.value.checkInKendra,
+                        message = r.message ?: "On duty."
+                    )
+                } else {
+                    _attendance.value = _attendance.value.copy(message = r.error ?: "Could not start duty.")
+                }
+            } catch (e: Exception) {
+                _attendance.value = _attendance.value.copy(message = e.message ?: "Could not start duty.")
+            }
+        }
+    }
+
+    fun offDuty() {
+        val s = _staff.value ?: return
+        val lat = lastLat
+        val lon = lastLon
+        if (lat == null || lon == null) {
+            _attendance.value = _attendance.value.copy(
+                message = "Waiting for a GPS fix — move near a window or outside and try again."
+            )
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val r = api.checkOut(s.id, lat, lon)
+                if (r.ok) {
+                    _attendance.value = _attendance.value.copy(
+                        checkOutAt = r.checkOutAt ?: _attendance.value.checkOutAt,
+                        workMinutes = r.workMinutes ?: _attendance.value.workMinutes,
+                        message = r.message ?: "Off duty."
+                    )
+                } else {
+                    _attendance.value = _attendance.value.copy(message = r.error ?: "Could not end duty.")
+                }
+            } catch (e: Exception) {
+                _attendance.value = _attendance.value.copy(message = e.message ?: "Could not end duty.")
+            }
+        }
+    }
+
+    fun saveFaceTemplate(template: String, onDone: (Boolean, String?) -> Unit) {
+        val s = _staff.value ?: return
+        viewModelScope.launch {
+            try {
+                val r = api.saveFaceTemplate(s.id, template)
+                if (r.ok) {
+                    val updated = s.copy(faceTemplate = template)
+                    session.save(updated, _kendras.value)
+                    _staff.value = updated
+                    onDone(true, null)
+                } else {
+                    onDone(false, r.error ?: "Could not save face registration.")
+                }
+            } catch (e: Exception) {
+                onDone(false, e.message ?: "Could not save face registration.")
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
     // Duty attendance loop (foreground only)
     // ------------------------------------------------------------------
     fun startAttendance() {
@@ -144,6 +228,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     presentCount = t.presentCount,
                     absentCount = t.absentCount,
                     lastPulseAt = t.lastPulseAt,
+                    workMinutes = t.record?.workMinutes,
                     running = true,
                     clock = GeoUtils.nowClockIST()
                 )
@@ -161,6 +246,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun onFix(staffId: String, allowed: List<Kendra>, lat: Double, lon: Double) {
+        lastLat = lat
+        lastLon = lon
         val near = AttendanceRules.nearest(allowed, lat, lon)
         val cur = _attendance.value
         _attendance.value = cur.copy(
@@ -180,24 +267,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         )
 
         when (action) {
-            AttendanceAction.CHECK_IN -> try {
-                val r = api.checkIn(staffId, lat, lon)
-                if (r.status == "checked_in" || r.status == "already") {
-                    activeKendraId = r.kendraId ?: activeKendraId
-                    lastPulseMillis = System.currentTimeMillis()
-                    _attendance.value = _attendance.value.copy(
-                        checkInAt = r.checkInAt ?: _attendance.value.checkInAt,
-                        dayStatus = r.attendanceStatus ?: _attendance.value.dayStatus,
-                        checkInKendra = r.kendraName ?: _attendance.value.checkInKendra,
-                        message = r.message ?: "Checked in."
-                    )
-                } else {
-                    _attendance.value = _attendance.value.copy(message = r.error ?: "Check-in failed.")
-                }
-            } catch (e: Exception) {
-                _attendance.value = _attendance.value.copy(message = e.message ?: "Check-in failed.")
-            }
-
             AttendanceAction.PULSE -> try {
                 val r = api.pulse(staffId, lat, lon)
                 if (r.ok) {
@@ -221,6 +290,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 if (r.ok) {
                     _attendance.value = _attendance.value.copy(
                         checkOutAt = r.checkOutAt ?: _attendance.value.checkOutAt,
+                        workMinutes = r.workMinutes ?: _attendance.value.workMinutes,
                         message = r.message ?: "Checked out."
                     )
                 }

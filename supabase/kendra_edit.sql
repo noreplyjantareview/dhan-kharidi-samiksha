@@ -16,9 +16,9 @@ create or replace function public.admin_update_kendra(
   p_longitude double precision,
   p_radius_m integer,
   p_check_in_start time,
-  p_check_in_end time,
-  p_day_end time,
-  p_verify_interval_min integer
+  p_check_in_end time default null,
+  p_day_end time default null,
+  p_verify_interval_min integer default null
 ) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare v_id uuid;
@@ -34,8 +34,8 @@ begin
          latitude          = p_latitude,
          longitude         = p_longitude,
          radius_m          = coalesce(p_radius_m, radius_m),
-         check_in_start    = coalesce(p_check_in_start, check_in_start),
-         check_in_end      = coalesce(p_check_in_end, check_in_end),
+         check_in_start    = p_check_in_start,
+         check_in_end      = p_check_in_start + interval '30 minutes',
          day_end           = coalesce(p_day_end, day_end),
          verify_interval_min = coalesce(p_verify_interval_min, verify_interval_min)
    where id = p_kendra_id

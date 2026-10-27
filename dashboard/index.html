@@ -47,9 +47,9 @@
   </section>
 
   <!-- ============ APP ============ -->
-  <div id="appView" class="hidden min-h-screen md:flex">
+  <div id="appView" class="hidden min-h-screen flex-col md:flex-row">
     <!-- Sidebar -->
-    <aside class="w-64 shrink-0 bg-white border-r border-slate-200 flex flex-col">
+    <aside class="w-full md:w-64 shrink-0 bg-white border-b md:border-b-0 md:border-r border-slate-200 flex flex-col">
       <div class="h-16 flex items-center gap-2 px-5 border-b border-slate-200">
         <div class="w-8 h-8 rounded-lg bg-blue-700 text-white flex items-center justify-center">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21s7-6.3 7-11a7 7 0 10-14 0c0 4.7 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
@@ -86,11 +86,11 @@
 
     <!-- Main -->
     <main class="flex-1 min-w-0">
-      <header class="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6">
+      <header class="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-6">
         <h2 id="viewTitle" class="text-lg font-semibold">Overview</h2>
         <div class="text-sm text-slate-500" id="todayLabel"></div>
       </header>
-      <div class="p-6">
+      <div class="p-4 md:p-6">
 
         <!-- Overview -->
         <section data-panel="overview" class="space-y-6">
@@ -140,10 +140,10 @@
               <div><label class="text-xs text-slate-500">Latitude</label><input id="kLat" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
               <div><label class="text-xs text-slate-500">Longitude</label><input id="kLon" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
               <div><label class="text-xs text-slate-500">Radius (m)</label><input id="kRadius" value="100" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-              <div><label class="text-xs text-slate-500">Check-in from</label><input id="kInStart" value="08:00" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-              <div><label class="text-xs text-slate-500">Check-in to</label><input id="kInEnd" value="10:00" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
+              <div><label class="text-xs text-slate-500">Check-in time</label><input id="kInStart" value="08:00" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
               <div><label class="text-xs text-slate-500">Day ends</label><input id="kDayEnd" value="18:00" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
               <div><label class="text-xs text-slate-500">Verify every (min)</label><input id="kVerify" value="30" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
+              <p class="col-span-2 md:col-span-4 text-xs text-slate-500">Check-in closes automatically 30 minutes after the check-in time (e.g. 16:00 → last check-in 16:30). Arrivals more than 15 minutes late are flagged <b>late</b>.</p>
               <div class="col-span-2 md:col-span-4"><button class="bg-blue-700 hover:bg-blue-800 text-white text-sm font-semibold rounded-lg px-4 py-2">Create kendra</button></div>
             </form>
           </div>
@@ -206,9 +206,9 @@
         <div><label class="text-xs text-slate-500">Longitude</label><input id="keLon" required step="any" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
         <div><label class="text-xs text-slate-500">Radius (m)</label><input id="keRadius" required inputmode="numeric" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
         <div><label class="text-xs text-slate-500">Verify every (min)</label><input id="keVerify" required inputmode="numeric" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-        <div><label class="text-xs text-slate-500">Check-in from</label><input id="keInStart" type="time" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-        <div><label class="text-xs text-slate-500">Check-in to</label><input id="keInEnd" type="time" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
+        <div><label class="text-xs text-slate-500">Check-in time</label><input id="keInStart" type="time" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
         <div><label class="text-xs text-slate-500">Day ends</label><input id="keDayEnd" type="time" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
+        <p class="col-span-2 text-xs text-slate-500">Check-in closes automatically 30 minutes after the check-in time.</p>
         <div class="col-span-2 flex justify-end gap-2 pt-2">
           <button type="button" id="kendraEditCancel" class="text-sm border border-slate-300 rounded-lg px-4 py-2 hover:bg-slate-50">Cancel</button>
           <button id="kendraEditSave" class="bg-blue-700 hover:bg-blue-800 text-white text-sm font-semibold rounded-lg px-4 py-2">Save changes</button>

@@ -28,7 +28,17 @@ body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
 #veil.on { display: flex; }
 
 .nav-link.active { background: #e8f0fe; color: #1565C0; font-weight: 600; }
-table.grid { border-collapse: collapse; width: 100%; }
+
+/* Responsive sidebar nav: horizontal scroll strip on phones */
+#nav { display: flex; gap: 4px; overflow-x: auto; }
+#nav .nav-link { white-space: nowrap; flex-shrink: 0; }
+@media (min-width: 768px) {
+  #nav { display: block; overflow: visible; }
+  #nav .nav-link { white-space: normal; }
+}
+
+table.grid { border-collapse: collapse; width: 100%; min-width: 560px; }
+#logsTable { min-width: 880px; }
 table.grid th, table.grid td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eef1f5; font-size: 13px; }
 table.grid th { color: #6b7280; font-weight: 600; background: #fafbfc; position: sticky; top: 0; }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }

@@ -3,7 +3,7 @@ package com.vsk.attendance.location
 import com.vsk.attendance.data.Kendra
 import com.vsk.attendance.util.GeoUtils
 
-enum class AttendanceAction { NONE, CHECK_IN, CHECK_OUT, PULSE }
+enum class AttendanceAction { NONE, CHECK_OUT, PULSE }
 
 data class NearestKendra(val kendra: Kendra, val distM: Double, val inside: Boolean)
 
@@ -24,6 +24,9 @@ object AttendanceRules {
     }
 
     /**
+     * Check-in is a manual, face-verified action in the UI; this engine only
+     * drives the automatic presence pulses and the day-end auto check-out.
+     *
      * @param activeKendra the kendra the user checked into (drives day_end + pulse interval).
      * @param nowMinutesIST current IST minutes since midnight.
      * @param millisSinceLastPulse how long ago the last presence pulse was sent.
@@ -40,15 +43,7 @@ object AttendanceRules {
     ): AttendanceAction {
         val near = nearest(kendras, lat, lon) ?: return AttendanceAction.NONE
 
-        if (!checkedIn) {
-            val start = GeoUtils.hhmmToMinutes(near.kendra.checkInStart)
-            val end = GeoUtils.hhmmToMinutes(near.kendra.checkInEnd)
-            return if (near.inside && start >= 0 && nowMinutesIST in start..end) {
-                AttendanceAction.CHECK_IN
-            } else AttendanceAction.NONE
-        }
-
-        if (checkedOut) return AttendanceAction.NONE
+        if (!checkedIn || checkedOut) return AttendanceAction.NONE
 
         val k = activeKendra ?: near.kendra
         val dayEnd = GeoUtils.hhmmToMinutes(k.dayEnd)
