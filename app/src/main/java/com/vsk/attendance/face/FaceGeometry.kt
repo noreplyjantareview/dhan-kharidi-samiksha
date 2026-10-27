@@ -174,8 +174,8 @@ object FaceGeometry {
     private fun appearance(face: Face, bitmap: Bitmap): FloatArray? {
         val le = face.getLandmark(FaceLandmark.LEFT_EYE)?.position ?: return null
         val re = face.getLandmark(FaceLandmark.RIGHT_EYE)?.position ?: return null
-        val scale = hypot((re.x - le.x).toDouble(), (re.y - le.y).toDouble())
-        if (scale <= 4.0) return null
+        val scale = hypot((re.x - le.x).toDouble(), (re.y - le.y).toDouble()).toFloat()
+        if (scale <= 4f) return null
         val cx = (le.x + re.x) / 2f
         val cy = (le.y + re.y) / 2f
         val ang = atan2((re.y - le.y).toDouble(), (re.x - le.x).toDouble())
