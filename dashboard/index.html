@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="[color-scheme:light]">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -10,17 +10,16 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css" />
   <script src="config.js"></script>
 </head>
-<body class="bg-[#f5f6fa] text-slate-800">
-  <div id="toasts"></div>
-  <div id="veil"><div class="spinner spinner-dark" style="width:28px;height:28px;border-width:3px"></div></div>
-  <div id="previewBanner" class="hidden">PREVIEW MODE — sample data only, nothing is read or saved</div>
+<body class="min-w-0 bg-[#f5f6fa] font-[family-name:Inter,ui-sans-serif,system-ui,sans-serif] text-slate-800">
+  <div id="toasts" class="fixed top-4 right-4 z-[70] flex w-[calc(100%-2rem)] max-w-[360px] flex-col gap-2 break-words" aria-live="polite"></div>
+  <div id="veil" class="hidden fixed inset-0 z-50 items-center justify-center bg-slate-50/[.65] backdrop-blur-[1px]"><div class="animate-spin h-7 w-7 rounded-full border-[3px] border-slate-200 border-t-blue-600" role="status" aria-label="Loading"></div></div>
+  <div id="previewBanner" class="hidden pointer-events-none fixed bottom-4 left-1/2 z-[60] w-max max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-full bg-violet-600 px-4 py-[9px] text-center text-xs font-bold tracking-[.04em] text-white shadow-[0_10px_30px_-10px_rgba(124,58,237,.8)]">PREVIEW MODE — sample data only, nothing is read or saved</div>
 
   <!-- ============ LOGIN ============ -->
-  <section id="loginView" class="hidden min-h-screen items-center justify-center p-6 login-bg">
-    <div class="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-8 border border-slate-100">
+  <section id="loginView" class="hidden min-h-screen items-center justify-center p-6 bg-[#eef2f7] bg-[radial-gradient(1100px_500px_at_12%_-10%,rgba(37,99,235,.20),transparent_60%),radial-gradient(900px_480px_at_100%_0%,rgba(15,23,42,.18),transparent_55%)]">
+    <div class="w-full min-w-0 max-w-sm bg-white rounded-2xl shadow-2xl p-8 border border-slate-100">
       <div class="flex items-center gap-3 mb-6">
         <div class="w-11 h-11 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-600/25">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21s7-6.3 7-11a7 7 0 10-14 0c0 4.7 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
@@ -35,25 +34,25 @@
         <div>
           <label class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Email</label>
           <input id="loginEmail" type="email" required autocomplete="username"
-            class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600" />
+            class="mt-1 w-full min-w-0 rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:border-blue-600 disabled:cursor-not-allowed disabled:opacity-60" />
         </div>
         <div>
           <label class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Password</label>
           <input id="loginPassword" type="password" required autocomplete="current-password"
-            class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600" />
+            class="mt-1 w-full min-w-0 rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:border-blue-600 disabled:cursor-not-allowed disabled:opacity-60" />
         </div>
         <button id="loginBtn" type="submit"
-          class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg py-2.5 text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 transition">
-          <span class="label">Sign in</span>
+          class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg py-2.5 text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60">
+          <span>Sign in</span>
         </button>
       </form>
     </div>
   </section>
 
   <!-- ============ APP ============ -->
-  <div id="appView" class="hidden min-h-screen flex-col md:flex-row">
+  <div id="appView" class="hidden min-h-screen min-w-0 flex-col md:flex-row">
     <!-- Sidebar -->
-    <aside class="w-full md:w-64 shrink-0 sidebar flex flex-col">
+    <aside class="flex w-full min-w-0 shrink-0 flex-col border-b border-white/[.08] bg-[linear-gradient(180deg,#0f172a_0%,#111c34_60%,#0b1220_100%)] md:w-64 md:border-b-0 md:border-r">
       <div class="h-16 flex items-center gap-2.5 px-5 border-b border-white/10">
         <div class="w-9 h-9 rounded-lg bg-blue-500 text-white flex items-center justify-center shadow-lg shadow-blue-900/40">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21s7-6.3 7-11a7 7 0 10-14 0c0 4.7 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
@@ -63,29 +62,29 @@
           <div class="text-[11px] text-slate-400">Samiksha Admin</div>
         </div>
       </div>
-      <nav class="p-3 space-y-1 text-sm" id="nav">
-        <a data-view="overview" class="nav-link active">
+      <nav class="flex min-w-0 max-w-full gap-1 overflow-x-auto p-3 text-sm md:flex-col md:overflow-visible" id="nav" aria-label="Dashboard navigation">
+        <button type="button" data-view="overview" aria-current="page" class="flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-[10px] px-3 py-[9px] text-left font-medium text-slate-300 transition-colors hover:bg-white/[.08] hover:text-white aria-[current=page]:bg-gradient-to-r aria-[current=page]:from-blue-600/30 aria-[current=page]:to-blue-600/10 aria-[current=page]:font-semibold aria-[current=page]:text-white aria-[current=page]:shadow-[inset_3px_0_0_#3b82f6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-60 md:whitespace-normal [&>svg]:h-5 [&>svg]:w-5 [&>svg]:shrink-0">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
-          Overview</a>
-        <a data-view="logs" class="nav-link">
+          Overview</button>
+        <button type="button" data-view="logs" class="flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-[10px] px-3 py-[9px] text-left font-medium text-slate-300 transition-colors hover:bg-white/[.08] hover:text-white aria-[current=page]:bg-gradient-to-r aria-[current=page]:from-blue-600/30 aria-[current=page]:to-blue-600/10 aria-[current=page]:font-semibold aria-[current=page]:text-white aria-[current=page]:shadow-[inset_3px_0_0_#3b82f6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-60 md:whitespace-normal [&>svg]:h-5 [&>svg]:w-5 [&>svg]:shrink-0">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
-          Attendance logs</a>
-        <a data-view="nodal" class="nav-link">
+          Attendance logs</button>
+        <button type="button" data-view="nodal" class="flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-[10px] px-3 py-[9px] text-left font-medium text-slate-300 transition-colors hover:bg-white/[.08] hover:text-white aria-[current=page]:bg-gradient-to-r aria-[current=page]:from-blue-600/30 aria-[current=page]:to-blue-600/10 aria-[current=page]:font-semibold aria-[current=page]:text-white aria-[current=page]:shadow-[inset_3px_0_0_#3b82f6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-60 md:whitespace-normal [&>svg]:h-5 [&>svg]:w-5 [&>svg]:shrink-0">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4M9 7l6-3"/></svg>
-          Nodal visits</a>
-        <a data-view="staff" class="nav-link">
+          Nodal visits</button>
+        <button type="button" data-view="staff" class="flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-[10px] px-3 py-[9px] text-left font-medium text-slate-300 transition-colors hover:bg-white/[.08] hover:text-white aria-[current=page]:bg-gradient-to-r aria-[current=page]:from-blue-600/30 aria-[current=page]:to-blue-600/10 aria-[current=page]:font-semibold aria-[current=page]:text-white aria-[current=page]:shadow-[inset_3px_0_0_#3b82f6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-60 md:whitespace-normal [&>svg]:h-5 [&>svg]:w-5 [&>svg]:shrink-0">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6-4a3 3 0 11-3-3"/></svg>
-          Staff</a>
-        <a data-view="kendra" class="nav-link">
+          Staff</button>
+        <button type="button" data-view="kendra" class="flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-[10px] px-3 py-[9px] text-left font-medium text-slate-300 transition-colors hover:bg-white/[.08] hover:text-white aria-[current=page]:bg-gradient-to-r aria-[current=page]:from-blue-600/30 aria-[current=page]:to-blue-600/10 aria-[current=page]:font-semibold aria-[current=page]:text-white aria-[current=page]:shadow-[inset_3px_0_0_#3b82f6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-60 md:whitespace-normal [&>svg]:h-5 [&>svg]:w-5 [&>svg]:shrink-0">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21s7-6.3 7-11a7 7 0 10-14 0c0 4.7 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
-          Kendras</a>
-        <a data-view="bulk" class="nav-link">
+          Kendras</button>
+        <button type="button" data-view="bulk" class="flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-[10px] px-3 py-[9px] text-left font-medium text-slate-300 transition-colors hover:bg-white/[.08] hover:text-white aria-[current=page]:bg-gradient-to-r aria-[current=page]:from-blue-600/30 aria-[current=page]:to-blue-600/10 aria-[current=page]:font-semibold aria-[current=page]:text-white aria-[current=page]:shadow-[inset_3px_0_0_#3b82f6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-60 md:whitespace-normal [&>svg]:h-5 [&>svg]:w-5 [&>svg]:shrink-0">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16V4m0 0l-4 4m4-4l4 4M4 20h16"/></svg>
-          Bulk upload</a>
+          Bulk upload</button>
       </nav>
-      <div class="mt-auto p-3 border-t border-white/10">
+      <div class="mt-auto min-w-0 p-3 border-t border-white/10">
         <div class="text-xs text-slate-400 px-2 mb-2 truncate" id="adminEmail"></div>
-        <button id="logoutBtn" class="w-full flex items-center justify-center gap-2 text-sm text-slate-300 hover:text-white px-3 py-2 rounded-lg hover:bg-white/10 transition">
+        <button id="logoutBtn" type="button" class="w-full flex items-center justify-center gap-2 text-sm text-slate-300 hover:text-white px-3 py-2 rounded-lg hover:bg-white/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-60">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
           Sign out</button>
       </div>
@@ -93,24 +92,24 @@
 
     <!-- Main -->
     <main class="flex-1 min-w-0">
-      <header class="h-16 bg-white/90 backdrop-blur border-b border-slate-200 flex items-center justify-between px-4 md:px-6 sticky top-0 z-30">
-        <h2 id="viewTitle" class="text-lg font-bold tracking-tight">Overview</h2>
-        <div class="text-sm text-slate-500" id="todayLabel"></div>
+      <header class="min-h-16 bg-white/90 backdrop-blur border-b border-slate-200 flex items-center justify-between gap-3 px-4 py-3 md:px-6 sticky top-0 z-30">
+        <h2 id="viewTitle" class="min-w-0 text-lg font-bold tracking-tight">Overview</h2>
+        <div class="min-w-0 text-right text-xs text-slate-500 sm:text-sm" id="todayLabel"></div>
       </header>
-      <div class="p-4 md:p-6">
+      <div class="min-w-0 p-4 md:p-6">
 
         <!-- Overview -->
         <section data-panel="overview" class="space-y-6">
-          <div id="statCards" class="grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
+          <div id="statCards" class="grid grid-cols-2 xl:grid-cols-4 gap-4"></div>
           <div class="grid md:grid-cols-2 gap-4">
-            <div class="card p-5">
+            <div class="min-w-0 rounded-[14px] border border-[#e6e9f0] bg-white shadow-[0_1px_2px_rgba(15,23,42,.04),0_8px_24px_-18px_rgba(15,23,42,.35)] p-5">
               <h3 class="font-bold mb-2 flex items-center gap-2">
-                <span class="dot bg-blue-600"></span>How to read this</h3>
+                <span class="inline-block h-2 w-2 shrink-0 rounded-full bg-blue-600"></span>How to read this</h3>
               <p class="text-sm text-slate-600 leading-relaxed">Present = checked in inside their kendra geofence during their own shift. Absent = staff with no check-in today. Presence pulses re-verify that staff stay on duty; the logs tab shows pulse counts and day-quality flags per person per day.</p>
             </div>
-            <div class="card p-5">
+            <div class="min-w-0 rounded-[14px] border border-[#e6e9f0] bg-white shadow-[0_1px_2px_rgba(15,23,42,.04),0_8px_24px_-18px_rgba(15,23,42,.35)] p-5">
               <h3 class="font-bold mb-2 flex items-center gap-2">
-                <span class="dot bg-amber-500"></span>Staff vs nodal</h3>
+                <span class="inline-block h-2 w-2 shrink-0 rounded-full bg-amber-500"></span>Staff vs nodal</h3>
               <p class="text-sm text-slate-600 leading-relaxed"><b>Staff</b> report to one kendra on a shift you set when you assign it — check-in opens for 30 minutes, arrivals over 15 minutes late are flagged. <b>Nodal officers</b> may visit several kendras with no fixed time: each face-checked arrival is stamped in the <b>Nodal visits</b> report and closed by the last pulse seen there.</p>
             </div>
           </div>
@@ -118,92 +117,92 @@
 
         <!-- Logs -->
         <section data-panel="logs" class="hidden space-y-4">
-          <div class="card p-4 flex flex-wrap gap-3 items-end">
-            <div><label class="lbl">From</label><input id="logFrom" type="date" class="inp mt-1"/></div>
-            <div><label class="lbl">To</label><input id="logTo" type="date" class="inp mt-1"/></div>
-            <div><label class="lbl">Kendra</label><select id="logKendra" class="inp mt-1"><option value="">All</option></select></div>
-            <div class="flex-1 min-w-[180px]"><label class="lbl">Search name / code / mobile</label><input id="logSearch" type="text" class="inp mt-1 w-full"/></div>
-            <button id="logApply" class="btn-primary">Apply</button>
+          <div class="min-w-0 rounded-[14px] border border-[#e6e9f0] bg-white shadow-[0_1px_2px_rgba(15,23,42,.04),0_8px_24px_-18px_rgba(15,23,42,.35)] p-4 flex flex-wrap gap-3 items-end">
+            <div class="min-w-0"><label class="block text-[11px] font-semibold uppercase tracking-[.04em] text-slate-500">From</label><input id="logFrom" type="date" class="mt-1 w-full min-w-0 max-w-full rounded-[9px] border border-[#d7dce6] bg-white px-[11px] py-2 text-[13px] text-slate-900 focus-visible:outline-none focus-visible:border-blue-600 focus-visible:ring-[3px] focus-visible:ring-blue-600/[.15] disabled:cursor-not-allowed disabled:opacity-60"/></div>
+            <div class="min-w-0"><label class="block text-[11px] font-semibold uppercase tracking-[.04em] text-slate-500">To</label><input id="logTo" type="date" class="mt-1 w-full min-w-0 max-w-full rounded-[9px] border border-[#d7dce6] bg-white px-[11px] py-2 text-[13px] text-slate-900 focus-visible:outline-none focus-visible:border-blue-600 focus-visible:ring-[3px] focus-visible:ring-blue-600/[.15] disabled:cursor-not-allowed disabled:opacity-60"/></div>
+            <div class="min-w-0"><label class="block text-[11px] font-semibold uppercase tracking-[.04em] text-slate-500">Kendra</label><select id="logKendra" class="mt-1 w-full min-w-0 max-w-full rounded-[9px] border border-[#d7dce6] bg-white px-[11px] py-2 text-[13px] text-slate-900 focus-visible:outline-none focus-visible:border-blue-600 focus-visible:ring-[3px] focus-visible:ring-blue-600/[.15] disabled:cursor-not-allowed disabled:opacity-60"><option value="">All</option></select></div>
+            <div class="min-w-0 flex-1 basis-[180px]"><label class="block text-[11px] font-semibold uppercase tracking-[.04em] text-slate-500">Search name / code / mobile</label><input id="logSearch" type="text" class="mt-1 w-full min-w-0 max-w-full rounded-[9px] border border-[#d7dce6] bg-white px-[11px] py-2 text-[13px] text-slate-900 focus-visible:outline-none focus-visible:border-blue-600 focus-visible:ring-[3px] focus-visible:ring-blue-600/[.15] disabled:cursor-not-allowed disabled:opacity-60"/></div>
+            <button id="logApply" class="inline-flex max-w-full items-center justify-center gap-2 rounded-[9px] bg-blue-600 px-4 py-[9px] text-[13px] font-semibold text-white shadow-[0_6px_16px_-8px_rgba(37,99,235,.9)] transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60">Apply</button>
           </div>
-          <div class="card overflow-hidden">
-            <div class="max-h-[65vh] overflow-auto"><table class="grid" id="logsTable"></table></div>
+          <div class="min-w-0 rounded-[14px] border border-[#e6e9f0] bg-white shadow-[0_1px_2px_rgba(15,23,42,.04),0_8px_24px_-18px_rgba(15,23,42,.35)] overflow-hidden">
+            <div class="max-h-[65vh] overflow-auto"><table class="w-full min-w-[1280px] table-auto border-separate border-spacing-0 whitespace-normal text-left text-[13px] [&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:border-b [&_th]:border-slate-200 [&_th]:bg-slate-50 [&_th]:px-4 [&_th]:py-3 [&_th]:text-left [&_th]:text-xs [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wide [&_th]:text-slate-500 [&_td]:border-b [&_td]:border-slate-100 [&_td]:px-4 [&_td]:py-3 [&_td]:align-middle [&_tbody_tr:hover]:bg-slate-50 [&_tbody_tr:last-child_td]:border-b-0" id="logsTable" aria-label="Attendance logs"></table></div>
           </div>
         </section>
 
         <!-- Nodal visits -->
         <section data-panel="nodal" class="hidden space-y-4">
-          <div class="card p-4 flex flex-wrap gap-3 items-end">
-            <div><label class="lbl">From</label><input id="nvFrom" type="date" class="inp mt-1"/></div>
-            <div><label class="lbl">To</label><input id="nvTo" type="date" class="inp mt-1"/></div>
-            <div><label class="lbl">Kendra</label><select id="nvKendra" class="inp mt-1"><option value="">All</option></select></div>
-            <div class="flex-1 min-w-[180px]"><label class="lbl">Search name / code / mobile</label><input id="nvSearch" type="text" class="inp mt-1 w-full"/></div>
-            <button id="nvApply" class="btn-primary">Apply</button>
+          <div class="min-w-0 rounded-[14px] border border-[#e6e9f0] bg-white shadow-[0_1px_2px_rgba(15,23,42,.04),0_8px_24px_-18px_rgba(15,23,42,.35)] p-4 flex flex-wrap gap-3 items-end">
+            <div class="min-w-0"><label class="block text-[11px] font-semibold uppercase tracking-[.04em] text-slate-500">From</label><input id="nvFrom" type="date" class="mt-1 w-full min-w-0 max-w-full rounded-[9px] border border-[#d7dce6] bg-white px-[11px] py-2 text-[13px] text-slate-900 focus-visible:outline-none focus-visible:border-blue-600 focus-visible:ring-[3px] focus-visible:ring-blue-600/[.15] disabled:cursor-not-allowed disabled:opacity-60"/></div>
+            <div class="min-w-0"><label class="block text-[11px] font-semibold uppercase tracking-[.04em] text-slate-500">To</label><input id="nvTo" type="date" class="mt-1 w-full min-w-0 max-w-full rounded-[9px] border border-[#d7dce6] bg-white px-[11px] py-2 text-[13px] text-slate-900 focus-visible:outline-none focus-visible:border-blue-600 focus-visible:ring-[3px] focus-visible:ring-blue-600/[.15] disabled:cursor-not-allowed disabled:opacity-60"/></div>
+            <div class="min-w-0"><label class="block text-[11px] font-semibold uppercase tracking-[.04em] text-slate-500">Kendra</label><select id="nvKendra" class="mt-1 w-full min-w-0 max-w-full rounded-[9px] border border-[#d7dce6] bg-white px-[11px] py-2 text-[13px] text-slate-900 focus-visible:outline-none focus-visible:border-blue-600 focus-visible:ring-[3px] focus-visible:ring-blue-600/[.15] disabled:cursor-not-allowed disabled:opacity-60"><option value="">All</option></select></div>
+            <div class="min-w-0 flex-1 basis-[180px]"><label class="block text-[11px] font-semibold uppercase tracking-[.04em] text-slate-500">Search name / code / mobile</label><input id="nvSearch" type="text" class="mt-1 w-full min-w-0 max-w-full rounded-[9px] border border-[#d7dce6] bg-white px-[11px] py-2 text-[13px] text-slate-900 focus-visible:outline-none focus-visible:border-blue-600 focus-visible:ring-[3px] focus-visible:ring-blue-600/[.15] disabled:cursor-not-allowed disabled:opacity-60"/></div>
+            <button id="nvApply" class="inline-flex max-w-full items-center justify-center gap-2 rounded-[9px] bg-blue-600 px-4 py-[9px] text-[13px] font-semibold text-white shadow-[0_6px_16px_-8px_rgba(37,99,235,.9)] transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60">Apply</button>
           </div>
-          <div class="card overflow-hidden">
-            <div class="max-h-[65vh] overflow-auto"><table class="grid" id="nodalTable"></table></div>
+          <div class="min-w-0 rounded-[14px] border border-[#e6e9f0] bg-white shadow-[0_1px_2px_rgba(15,23,42,.04),0_8px_24px_-18px_rgba(15,23,42,.35)] overflow-hidden">
+            <div class="max-h-[65vh] overflow-auto"><table class="w-full min-w-[1050px] table-auto border-separate border-spacing-0 whitespace-normal text-left text-[13px] [&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:border-b [&_th]:border-slate-200 [&_th]:bg-slate-50 [&_th]:px-4 [&_th]:py-3 [&_th]:text-left [&_th]:text-xs [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wide [&_th]:text-slate-500 [&_td]:border-b [&_td]:border-slate-100 [&_td]:px-4 [&_td]:py-3 [&_td]:align-middle [&_tbody_tr:hover]:bg-slate-50 [&_tbody_tr:last-child_td]:border-b-0" id="nodalTable" aria-label="Nodal visits"></table></div>
           </div>
           <p class="text-xs text-slate-500">A nodal visit opens when the officer marks On Duty with a face check inside the kendra geofence, and closes at the last presence pulse seen there. <b>Time on site</b> is arrival → last pulse.</p>
         </section>
 
         <!-- Staff -->
         <section data-panel="staff" class="hidden space-y-4">
-          <div class="card p-5">
+          <div class="min-w-0 rounded-[14px] border border-[#e6e9f0] bg-white shadow-[0_1px_2px_rgba(15,23,42,.04),0_8px_24px_-18px_rgba(15,23,42,.35)] p-5">
             <h3 class="font-bold mb-1">Enroll staff</h3>
             <p class="text-xs text-slate-500 mb-3">Employee code is required and must be unique. Shift timing is set later, per person, from <b>Assign</b>.</p>
             <form id="enrollForm" class="flex flex-wrap gap-3 items-end">
-              <div class="flex-1 min-w-[170px]"><label class="lbl">Full name</label><input id="enName" required class="inp mt-1 w-full"/></div>
-              <div class="min-w-[130px]"><label class="lbl">Employee code</label><input id="enCode" required class="inp mt-1 w-full" placeholder="EMP-0001"/></div>
-              <div class="min-w-[140px]"><label class="lbl">Mobile</label><input id="enMobile" required inputmode="numeric" maxlength="10" class="inp mt-1 w-full"/></div>
-              <div><label class="lbl">Category</label><select id="enCategory" class="inp mt-1"><option value="staff">Staff (one kendra + shift)</option><option value="nodal">Nodal (visits many)</option></select></div>
-              <button class="btn-primary">Add staff</button>
+              <div class="min-w-0 flex-1 basis-[170px]"><label class="block text-[11px] font-semibold uppercase tracking-[.04em] text-slate-500">Full name</label><input id="enName" required class="mt-1 w-full min-w-0 max-w-full rounded-[9px] border border-[#d7dce6] bg-white px-[11px] py-2 text-[13px] text-slate-900 focus-visible:outline-none focus-visible:border-blue-600 focus-visible:ring-[3px] focus-visible:ring-blue-600/[.15] disabled:cursor-not-allowed disabled:opacity-60"/></div>
+              <div class="min-w-0 flex-1 basis-[130px]"><label class="block text-[11px] font-semibold uppercase tracking-[.04em] text-slate-500">Employee code</label><input id="enCode" required class="mt-1 w-full min-w-0 max-w-full rounded-[9px] border border-[#d7dce6] bg-white px-[11px] py-2 text-[13px] text-slate-900 focus-visible:outline-none focus-visible:border-blue-600 focus-visible:ring-[3px] focus-visible:ring-blue-600/[.15] disabled:cursor-not-allowed disabled:opacity-60" placeholder="EMP-0001"/></div>
+              <div class="min-w-0 flex-1 basis-[140px]"><label class="block text-[11px] font-semibold uppercase tracking-[.04em] text-slate-500">Mobile</label><input id="enMobile" required inputmode="numeric" maxlength="10" class="mt-1 w-full min-w-0 max-w-full rounded-[9px] border border-[#d7dce6] bg-white px-[11px] py-2 text-[13px] text-slate-900 focus-visible:outline-none focus-visible:border-blue-600 focus-visible:ring-[3px] focus-visible:ring-blue-600/[.15] disabled:cursor-not-allowed disabled:opacity-60"/></div>
+              <div class="min-w-0"><label class="block text-[11px] font-semibold uppercase tracking-[.04em] text-slate-500">Category</label><select id="enCategory" class="mt-1 w-full min-w-0 max-w-full rounded-[9px] border border-[#d7dce6] bg-white px-[11px] py-2 text-[13px] text-slate-900 focus-visible:outline-none focus-visible:border-blue-600 focus-visible:ring-[3px] focus-visible:ring-blue-600/[.15] disabled:cursor-not-allowed disabled:opacity-60"><option value="staff">Staff (one kendra + shift)</option><option value="nodal">Nodal (visits many)</option></select></div>
+              <button class="inline-flex max-w-full items-center justify-center gap-2 rounded-[9px] bg-blue-600 px-4 py-[9px] text-[13px] font-semibold text-white shadow-[0_6px_16px_-8px_rgba(37,99,235,.9)] transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60">Add staff</button>
             </form>
           </div>
-          <div class="card overflow-hidden">
-            <div class="max-h-[60vh] overflow-auto"><table class="grid" id="staffTable"></table></div>
+          <div class="min-w-0 rounded-[14px] border border-[#e6e9f0] bg-white shadow-[0_1px_2px_rgba(15,23,42,.04),0_8px_24px_-18px_rgba(15,23,42,.35)] overflow-hidden">
+            <div class="max-h-[60vh] overflow-auto"><table class="w-full min-w-[900px] table-auto border-separate border-spacing-0 whitespace-normal text-left text-[13px] [&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:border-b [&_th]:border-slate-200 [&_th]:bg-slate-50 [&_th]:px-4 [&_th]:py-3 [&_th]:text-left [&_th]:text-xs [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wide [&_th]:text-slate-500 [&_td]:border-b [&_td]:border-slate-100 [&_td]:px-4 [&_td]:py-3 [&_td]:align-middle [&_tbody_tr:hover]:bg-slate-50 [&_tbody_tr:last-child_td]:border-b-0" id="staffTable" aria-label="Staff directory"></table></div>
           </div>
         </section>
 
         <!-- Kendra -->
         <section data-panel="kendra" class="hidden space-y-4">
-          <div class="card p-5">
+          <div class="min-w-0 rounded-[14px] border border-[#e6e9f0] bg-white shadow-[0_1px_2px_rgba(15,23,42,.04),0_8px_24px_-18px_rgba(15,23,42,.35)] p-5">
             <h3 class="font-bold mb-1">Add kendra</h3>
             <p class="text-xs text-slate-500 mb-3">A kendra is only a place: location, geofence radius and how often presence is re-verified. Shift timing belongs to each staff member and is set from <b>Staff → Assign</b>.</p>
-            <form id="kendraForm" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 items-end">
-              <div class="col-span-2"><label class="lbl">Name</label><input id="kName" required class="inp mt-1 w-full"/></div>
-              <div><label class="lbl">Latitude</label><input id="kLat" required step="any" class="inp mt-1 w-full"/></div>
-              <div><label class="lbl">Longitude</label><input id="kLon" required step="any" class="inp mt-1 w-full"/></div>
-              <div><label class="lbl">Radius (m)</label><input id="kRadius" value="100" class="inp mt-1 w-full"/></div>
-              <div><label class="lbl">Verify every (min)</label><input id="kVerify" value="30" class="inp mt-1 w-full"/></div>
-              <div class="col-span-2 md:col-span-3 lg:col-span-5"><button class="btn-primary">Create kendra</button></div>
+            <form id="kendraForm" class="grid min-w-0 grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 items-end">
+              <div class="col-span-2 min-w-0"><label class="block text-[11px] font-semibold uppercase tracking-[.04em] text-slate-500">Name</label><input id="kName" required class="mt-1 w-full min-w-0 max-w-full rounded-[9px] border border-[#d7dce6] bg-white px-[11px] py-2 text-[13px] text-slate-900 focus-visible:outline-none focus-visible:border-blue-600 focus-visible:ring-[3px] focus-visible:ring-blue-600/[.15] disabled:cursor-not-allowed disabled:opacity-60"/></div>
+              <div class="min-w-0"><label class="block text-[11px] font-semibold uppercase tracking-[.04em] text-slate-500">Latitude</label><input id="kLat" required step="any" class="mt-1 w-full min-w-0 max-w-full rounded-[9px] border border-[#d7dce6] bg-white px-[11px] py-2 text-[13px] text-slate-900 focus-visible:outline-none focus-visible:border-blue-600 focus-visible:ring-[3px] focus-visible:ring-blue-600/[.15] disabled:cursor-not-allowed disabled:opacity-60"/></div>
+              <div class="min-w-0"><label class="block text-[11px] font-semibold uppercase tracking-[.04em] text-slate-500">Longitude</label><input id="kLon" required step="any" class="mt-1 w-full min-w-0 max-w-full rounded-[9px] border border-[#d7dce6] bg-white px-[11px] py-2 text-[13px] text-slate-900 focus-visible:outline-none focus-visible:border-blue-600 focus-visible:ring-[3px] focus-visible:ring-blue-600/[.15] disabled:cursor-not-allowed disabled:opacity-60"/></div>
+              <div class="min-w-0"><label class="block text-[11px] font-semibold uppercase tracking-[.04em] text-slate-500">Radius (m)</label><input id="kRadius" value="100" class="mt-1 w-full min-w-0 max-w-full rounded-[9px] border border-[#d7dce6] bg-white px-[11px] py-2 text-[13px] text-slate-900 focus-visible:outline-none focus-visible:border-blue-600 focus-visible:ring-[3px] focus-visible:ring-blue-600/[.15] disabled:cursor-not-allowed disabled:opacity-60"/></div>
+              <div class="min-w-0"><label class="block text-[11px] font-semibold uppercase tracking-[.04em] text-slate-500">Verify every (min)</label><input id="kVerify" value="30" class="mt-1 w-full min-w-0 max-w-full rounded-[9px] border border-[#d7dce6] bg-white px-[11px] py-2 text-[13px] text-slate-900 focus-visible:outline-none focus-visible:border-blue-600 focus-visible:ring-[3px] focus-visible:ring-blue-600/[.15] disabled:cursor-not-allowed disabled:opacity-60"/></div>
+              <div class="col-span-2 min-w-0 md:col-span-3 xl:col-span-5"><button class="inline-flex max-w-full items-center justify-center gap-2 rounded-[9px] bg-blue-600 px-4 py-[9px] text-[13px] font-semibold text-white shadow-[0_6px_16px_-8px_rgba(37,99,235,.9)] transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60">Create kendra</button></div>
             </form>
           </div>
-          <div class="card overflow-hidden">
-            <div class="max-h-[55vh] overflow-auto"><table class="grid" id="kendraTable"></table></div>
+          <div class="min-w-0 rounded-[14px] border border-[#e6e9f0] bg-white shadow-[0_1px_2px_rgba(15,23,42,.04),0_8px_24px_-18px_rgba(15,23,42,.35)] overflow-hidden">
+            <div class="max-h-[55vh] overflow-auto"><table class="w-full min-w-[850px] table-auto border-separate border-spacing-0 whitespace-normal text-left text-[13px] [&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:border-b [&_th]:border-slate-200 [&_th]:bg-slate-50 [&_th]:px-4 [&_th]:py-3 [&_th]:text-left [&_th]:text-xs [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wide [&_th]:text-slate-500 [&_td]:border-b [&_td]:border-slate-100 [&_td]:px-4 [&_td]:py-3 [&_td]:align-middle [&_tbody_tr:hover]:bg-slate-50 [&_tbody_tr:last-child_td]:border-b-0" id="kendraTable" aria-label="Kendra directory"></table></div>
           </div>
         </section>
 
         <!-- Bulk -->
         <section data-panel="bulk" class="hidden space-y-4">
-          <div class="card p-5 space-y-4">
+          <div class="min-w-0 rounded-[14px] border border-[#e6e9f0] bg-white shadow-[0_1px_2px_rgba(15,23,42,.04),0_8px_24px_-18px_rgba(15,23,42,.35)] p-5 space-y-4">
             <div class="flex items-center justify-between flex-wrap gap-3">
               <div>
                 <h3 class="font-bold">Bulk enroll from Excel</h3>
                 <p class="text-sm text-slate-500 mt-1">Columns: <b>Full name</b>, <b>Employee code</b>, <b>Mobile number</b>, <b>Role</b> (staff/admin), <b>Category</b> (staff/nodal), <b>Kendra name(s)</b> (comma-separated for nodal), <b>Check-in time</b> and <b>Day ends</b> (optional, for staff). Kendras must already exist.</p>
               </div>
-              <button id="tplBtn" class="btn-ghost">Download template (.xlsx)</button>
+              <button id="tplBtn" class="inline-flex max-w-full items-center justify-center gap-2 rounded-[9px] border border-[#d7dce6] bg-white px-4 py-[9px] text-[13px] font-semibold text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60">Download template (.xlsx)</button>
             </div>
-            <input id="xlsxFile" type="file" accept=".xlsx,.xls,.csv" class="block w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-700 file:font-semibold hover:file:bg-blue-100"/>
+            <input id="xlsxFile" type="file" accept=".xlsx,.xls,.csv" class="block w-full min-w-0 max-w-full rounded-lg text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-700 file:font-semibold hover:file:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"/>
           </div>
-          <div id="bulkPreviewWrap" class="hidden card overflow-hidden">
-            <div class="p-4 flex items-center justify-between border-b border-slate-200">
+          <div id="bulkPreviewWrap" class="hidden min-w-0 rounded-[14px] border border-[#e6e9f0] bg-white shadow-[0_1px_2px_rgba(15,23,42,.04),0_8px_24px_-18px_rgba(15,23,42,.35)] overflow-hidden">
+            <div class="p-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200">
               <h3 class="font-bold">Preview (<span id="bulkCount">0</span> rows)</h3>
-              <button id="bulkSubmit" class="btn-success">Upload &amp; enroll</button>
+              <button id="bulkSubmit" class="inline-flex max-w-full items-center justify-center gap-2 rounded-[9px] bg-green-600 px-4 py-[9px] text-[13px] font-semibold text-white transition-colors hover:bg-green-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60">Upload &amp; enroll</button>
             </div>
-            <div class="max-h-[40vh] overflow-auto"><table class="grid" id="bulkPreview"></table></div>
+            <div class="max-h-[40vh] overflow-auto"><table class="w-full min-w-[1100px] table-auto border-separate border-spacing-0 whitespace-normal text-left text-[13px] [&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:border-b [&_th]:border-slate-200 [&_th]:bg-slate-50 [&_th]:px-4 [&_th]:py-3 [&_th]:text-left [&_th]:text-xs [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wide [&_th]:text-slate-500 [&_td]:border-b [&_td]:border-slate-100 [&_td]:px-4 [&_td]:py-3 [&_td]:align-middle [&_tbody_tr:hover]:bg-slate-50 [&_tbody_tr:last-child_td]:border-b-0" id="bulkPreview" aria-label="Bulk enrollment preview"></table></div>
           </div>
-          <div id="bulkResultWrap" class="hidden card overflow-hidden">
+          <div id="bulkResultWrap" class="hidden min-w-0 rounded-[14px] border border-[#e6e9f0] bg-white shadow-[0_1px_2px_rgba(15,23,42,.04),0_8px_24px_-18px_rgba(15,23,42,.35)] overflow-hidden">
             <div class="p-4 border-b border-slate-200"><h3 class="font-bold">Result</h3></div>
-            <div class="max-h-[40vh] overflow-auto"><table class="grid" id="bulkResult"></table></div>
+            <div class="max-h-[40vh] overflow-auto"><table class="w-full min-w-[640px] table-auto border-separate border-spacing-0 whitespace-normal text-left text-[13px] [&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:border-b [&_th]:border-slate-200 [&_th]:bg-slate-50 [&_th]:px-4 [&_th]:py-3 [&_th]:text-left [&_th]:text-xs [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wide [&_th]:text-slate-500 [&_td]:border-b [&_td]:border-slate-100 [&_td]:px-4 [&_td]:py-3 [&_td]:align-middle [&_tbody_tr:hover]:bg-slate-50 [&_tbody_tr:last-child_td]:border-b-0" id="bulkResult" aria-label="Bulk enrollment results"></table></div>
           </div>
         </section>
 
@@ -212,37 +211,37 @@
   </div>
 
   <!-- Assign kendra + shift modal -->
-  <div id="assignModal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40 items-center justify-center p-4">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+  <div id="assignModal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40 items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Assign kendra and shift">
+    <div class="bg-white rounded-2xl shadow-2xl w-full min-w-0 max-w-lg max-h-[90dvh] overflow-auto">
       <div class="p-5 border-b border-slate-200 flex items-start justify-between gap-3">
-        <div>
+        <div class="min-w-0 break-words">
           <h3 class="font-bold">Assign kendra &amp; shift</h3>
           <p class="text-sm text-slate-500 mt-0.5"><span id="assignName"></span> · <span id="assignCategory"></span></p>
         </div>
-        <button id="assignClose" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
+        <button id="assignClose" type="button" aria-label="Close assignment dialog" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-700 text-2xl leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60">&times;</button>
       </div>
-      <div class="p-4 space-y-2 max-h-[58vh] overflow-auto" id="assignList"></div>
-      <div class="p-4 border-t border-slate-200 text-xs text-slate-500 bg-slate-50" id="assignHint"></div>
+      <div class="min-w-0 p-4 space-y-2 max-h-[58vh] overflow-auto" id="assignList"></div>
+      <div class="break-words p-4 border-t border-slate-200 text-xs text-slate-500 bg-slate-50" id="assignHint"></div>
     </div>
   </div>
 
   <!-- Edit kendra modal -->
-  <div id="kendraEditModal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40 items-center justify-center p-4">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
-      <div class="p-5 border-b border-slate-200 flex items-center justify-between">
-        <h3 class="font-bold">Edit kendra</h3>
-        <button id="kendraEditClose" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
+  <div id="kendraEditModal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40 items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Edit kendra">
+    <div class="bg-white rounded-2xl shadow-2xl w-full min-w-0 max-w-lg max-h-[90dvh] overflow-auto">
+      <div class="p-5 border-b border-slate-200 flex items-center justify-between gap-3">
+        <h3 class="min-w-0 font-bold">Edit kendra</h3>
+        <button id="kendraEditClose" type="button" aria-label="Close kendra edit dialog" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-700 text-2xl leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60">&times;</button>
       </div>
-      <form id="kendraEditForm" class="p-5 grid grid-cols-2 gap-3">
-        <div class="col-span-2"><label class="lbl">Name</label><input id="keName" required class="inp mt-1 w-full"/></div>
-        <div><label class="lbl">Latitude</label><input id="keLat" required step="any" class="inp mt-1 w-full"/></div>
-        <div><label class="lbl">Longitude</label><input id="keLon" required step="any" class="inp mt-1 w-full"/></div>
-        <div><label class="lbl">Radius (m)</label><input id="keRadius" required inputmode="numeric" class="inp mt-1 w-full"/></div>
-        <div><label class="lbl">Verify every (min)</label><input id="keVerify" required inputmode="numeric" class="inp mt-1 w-full"/></div>
+      <form id="kendraEditForm" class="min-w-0 p-5 grid grid-cols-2 gap-3">
+        <div class="col-span-2 min-w-0"><label class="block text-[11px] font-semibold uppercase tracking-[.04em] text-slate-500">Name</label><input id="keName" required class="mt-1 w-full min-w-0 max-w-full rounded-[9px] border border-[#d7dce6] bg-white px-[11px] py-2 text-[13px] text-slate-900 focus-visible:outline-none focus-visible:border-blue-600 focus-visible:ring-[3px] focus-visible:ring-blue-600/[.15] disabled:cursor-not-allowed disabled:opacity-60"/></div>
+        <div class="min-w-0"><label class="block text-[11px] font-semibold uppercase tracking-[.04em] text-slate-500">Latitude</label><input id="keLat" required step="any" class="mt-1 w-full min-w-0 max-w-full rounded-[9px] border border-[#d7dce6] bg-white px-[11px] py-2 text-[13px] text-slate-900 focus-visible:outline-none focus-visible:border-blue-600 focus-visible:ring-[3px] focus-visible:ring-blue-600/[.15] disabled:cursor-not-allowed disabled:opacity-60"/></div>
+        <div class="min-w-0"><label class="block text-[11px] font-semibold uppercase tracking-[.04em] text-slate-500">Longitude</label><input id="keLon" required step="any" class="mt-1 w-full min-w-0 max-w-full rounded-[9px] border border-[#d7dce6] bg-white px-[11px] py-2 text-[13px] text-slate-900 focus-visible:outline-none focus-visible:border-blue-600 focus-visible:ring-[3px] focus-visible:ring-blue-600/[.15] disabled:cursor-not-allowed disabled:opacity-60"/></div>
+        <div class="min-w-0"><label class="block text-[11px] font-semibold uppercase tracking-[.04em] text-slate-500">Radius (m)</label><input id="keRadius" required inputmode="numeric" class="mt-1 w-full min-w-0 max-w-full rounded-[9px] border border-[#d7dce6] bg-white px-[11px] py-2 text-[13px] text-slate-900 focus-visible:outline-none focus-visible:border-blue-600 focus-visible:ring-[3px] focus-visible:ring-blue-600/[.15] disabled:cursor-not-allowed disabled:opacity-60"/></div>
+        <div class="min-w-0"><label class="block text-[11px] font-semibold uppercase tracking-[.04em] text-slate-500">Verify every (min)</label><input id="keVerify" required inputmode="numeric" class="mt-1 w-full min-w-0 max-w-full rounded-[9px] border border-[#d7dce6] bg-white px-[11px] py-2 text-[13px] text-slate-900 focus-visible:outline-none focus-visible:border-blue-600 focus-visible:ring-[3px] focus-visible:ring-blue-600/[.15] disabled:cursor-not-allowed disabled:opacity-60"/></div>
         <p class="col-span-2 text-xs text-slate-500">Shift timing lives on each staff assignment — change it from <b>Staff → Assign</b>.</p>
         <div class="col-span-2 flex justify-end gap-2 pt-2">
-          <button type="button" id="kendraEditCancel" class="btn-ghost">Cancel</button>
-          <button id="kendraEditSave" class="btn-primary">Save changes</button>
+          <button type="button" id="kendraEditCancel" class="inline-flex max-w-full items-center justify-center gap-2 rounded-[9px] border border-[#d7dce6] bg-white px-4 py-[9px] text-[13px] font-semibold text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60">Cancel</button>
+          <button id="kendraEditSave" class="inline-flex max-w-full items-center justify-center gap-2 rounded-[9px] bg-blue-600 px-4 py-[9px] text-[13px] font-semibold text-white shadow-[0_6px_16px_-8px_rgba(37,99,235,.9)] transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60">Save changes</button>
         </div>
       </form>
     </div>

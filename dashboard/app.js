@@ -8,18 +8,22 @@
   // ---------- helpers ----------
   function toast(msg, type = "info") {
     const el = document.createElement("div");
-    el.className = `toast ${type}`;
+    const colors = { ok: "bg-green-600", err: "bg-red-600", info: "bg-blue-600" };
+    el.className = `rounded-xl px-4 py-3 text-sm font-medium text-white shadow-xl ${colors[type] || colors.info}`;
     el.textContent = msg;
     $("#toasts").appendChild(el);
     setTimeout(() => el.remove(), 4000);
   }
-  function veil(on) { $("#veil").classList.toggle("on", !!on); }
+  function veil(on) {
+    $("#veil").classList.toggle("hidden", !on);
+    $("#veil").classList.toggle("flex", !!on);
+  }
   function busy(btn, on, label) {
     if (!btn) return;
     if (on) {
       btn.dataset.html = btn.innerHTML;
       btn.disabled = true;
-      btn.innerHTML = `<span class="spinner"></span><span>${label || "Working…"}</span>`;
+      btn.innerHTML = `<span class="inline-block h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-current border-r-transparent" aria-hidden="true"></span><span>${esc(label || "Working…")}</span>`;
     } else {
       btn.disabled = false;
       if (btn.dataset.html) btn.innerHTML = btn.dataset.html;
@@ -38,16 +42,16 @@
   function statusBadge(s) {
     if (!s) return "—";
     const map = { present: "bg-green-100 text-green-700", late: "bg-amber-100 text-amber-700" };
-    return `<span class="badge ${map[s] || "bg-slate-100 text-slate-600"}">${esc(s)}</span>`;
+    return `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide ${map[s] || "bg-slate-100 text-slate-600"}">${esc(s)}</span>`;
   }
   function flagsBadges(r) {
     const out = [];
     if (r.check_out_reason === "left_area")
-      out.push(`<span class="badge bg-red-600 text-white">LEFT AREA</span>`);
+      out.push(`<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-red-600 text-white">LEFT AREA</span>`);
     if ((r.absent_streak_min ?? 0) >= 15)
-      out.push(`<span class="badge bg-red-100 text-red-700">OUT ${r.absent_streak_min}m</span>`);
+      out.push(`<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-red-100 text-red-700">OUT ${r.absent_streak_min}m</span>`);
     if ((r.silence_min ?? 0) > 60)
-      out.push(`<span class="badge bg-amber-100 text-amber-700">DARK ${r.silence_min}m</span>`);
+      out.push(`<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-amber-100 text-amber-700">DARK ${r.silence_min}m</span>`);
     return out.length ? out.join(" ") : `<span class="text-slate-300">—</span>`;
   }
   // Excel cells arrive as "08:00", a Date, or a fraction of a day.
@@ -134,7 +138,10 @@
     staff: "Staff", kendra: "Kendras", bulk: "Bulk upload",
   };
   async function switchView(view) {
-    $$(".nav-link").forEach((a) => a.classList.toggle("active", a.dataset.view === view));
+    $$("[data-view]").forEach((a) => {
+      if (a.dataset.view === view) a.setAttribute("aria-current", "page");
+      else a.removeAttribute("aria-current");
+    });
     $$("[data-panel]").forEach((p) => p.classList.toggle("hidden", p.dataset.panel !== view));
     $("#viewTitle").textContent = TITLES[view] || "";
     if (view === "overview") await loadOverview();
@@ -143,7 +150,7 @@
     if (view === "staff") { await ensureKendras(); await loadStaff(); }
     if (view === "kendra") await loadKendras();
   }
-  $$(".nav-link").forEach((a) => a.addEventListener("click", () => switchView(a.dataset.view)));
+  $$("[data-view]").forEach((a) => a.addEventListener("click", () => switchView(a.dataset.view)));
 
   // ---------- data ----------
   async function ensureKendras() {
@@ -185,11 +192,11 @@
     ];
     $("#statCards").innerHTML = cards.map(([cap, val, tone, icon]) => {
       const [bg, fg] = TONES[tone];
-      return `<div class="stat">
-        <div class="ico ${bg} ${fg}">${icon}</div>
+      return `<div class="flex min-w-0 flex-col items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center">
+        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl [&>svg]:h-5 [&>svg]:w-5 ${bg} ${fg}">${icon}</div>
         <div class="min-w-0">
-          <div class="num ${fg}">${val ?? 0}</div>
-          <div class="cap">${cap}</div>
+          <div class="text-2xl font-extrabold leading-tight tracking-tight ${fg}">${val ?? 0}</div>
+          <div class="break-words text-[11px] font-semibold uppercase tracking-wide text-slate-500">${cap}</div>
         </div>
       </div>`;
     }).join("");
@@ -219,19 +226,19 @@
     if (!rows.length) { $("#logsTable").innerHTML = `<tr><td class="p-6 text-slate-500">No attendance in this range.</td></tr>`; return; }
     $("#logsTable").innerHTML = `
       <thead><tr>
-        <th>Date</th><th>Staff</th><th>Code</th><th>Mobile</th><th>Kendra</th>
-        <th>Check-in</th><th>Check-out</th><th>Work time</th><th>Status</th><th>Present</th><th>Absent</th><th>Flags</th>
+        <th scope="col">Date</th><th scope="col">Staff</th><th scope="col">Code</th><th scope="col">Mobile</th><th scope="col">Kendra</th>
+        <th scope="col">Check-in</th><th scope="col">Check-out</th><th scope="col">Work time</th><th scope="col">Status</th><th scope="col">Present</th><th scope="col">Absent</th><th scope="col">Flags</th>
       </tr></thead>
       <tbody>${rows.map((r) => `
         <tr>
-          <td class="mono">${esc(r.day)}</td>
+          <td class="tabular-nums whitespace-nowrap">${esc(r.day)}</td>
           <td class="font-medium">${esc(r.staff_name)}</td>
-          <td class="mono text-slate-500">${esc(r.employee_code || "—")}</td>
-          <td class="mono">${esc(r.mobile)}</td>
+          <td class="tabular-nums whitespace-nowrap text-slate-500">${esc(r.employee_code || "—")}</td>
+          <td class="tabular-nums whitespace-nowrap">${esc(r.mobile)}</td>
           <td>${esc(r.kendra || "—")}</td>
-          <td class="mono">${esc(r.check_in_at || "—")}</td>
-          <td class="mono">${esc(r.check_out_at || "—")}</td>
-          <td class="mono">${fmtWork(r.work_minutes)}</td>
+          <td class="tabular-nums whitespace-nowrap">${esc(r.check_in_at || "—")}</td>
+          <td class="tabular-nums whitespace-nowrap">${esc(r.check_out_at || "—")}</td>
+          <td class="tabular-nums whitespace-nowrap">${fmtWork(r.work_minutes)}</td>
           <td>${statusBadge(r.status)}</td>
           <td class="text-green-600 font-semibold">${r.present_count ?? 0}</td>
           <td class="${(r.absent_count ?? 0) > 0 ? "text-red-600 font-semibold" : "text-slate-300"}">${r.absent_count ?? 0}</td>
@@ -257,23 +264,23 @@
     const totalMin = rows.reduce((s, r) => s + (r.minutes_at_site || 0), 0);
     $("#nodalTable").innerHTML = `
       <thead><tr>
-        <th>Date</th><th>Officer</th><th>Code</th><th>Kendra</th>
-        <th>Arrived</th><th>Last seen</th><th>Time on site</th><th>Pulses</th>
+        <th scope="col">Date</th><th scope="col">Officer</th><th scope="col">Code</th><th scope="col">Kendra</th>
+        <th scope="col">Arrived</th><th scope="col">Last seen</th><th scope="col">Time on site</th><th scope="col">Pulses</th>
       </tr></thead>
       <tbody>${rows.map((r) => `
         <tr>
-          <td class="mono">${esc(r.day)}</td>
+          <td class="tabular-nums whitespace-nowrap">${esc(r.day)}</td>
           <td class="font-medium">${esc(r.staff_name)}</td>
-          <td class="mono text-slate-500">${esc(r.employee_code || "—")}</td>
+          <td class="tabular-nums whitespace-nowrap text-slate-500">${esc(r.employee_code || "—")}</td>
           <td>${esc(r.kendra)}</td>
-          <td class="mono font-semibold">${esc(r.arrived_at || "—")}</td>
-          <td class="mono">${esc(r.last_seen_at || "—")}</td>
-          <td class="mono">${fmtWork(r.minutes_at_site)}</td>
+          <td class="tabular-nums whitespace-nowrap font-semibold">${esc(r.arrived_at || "—")}</td>
+          <td class="tabular-nums whitespace-nowrap">${esc(r.last_seen_at || "—")}</td>
+          <td class="tabular-nums whitespace-nowrap">${fmtWork(r.minutes_at_site)}</td>
           <td class="${(r.pulses_inside ?? 0) > 0 ? "text-green-600 font-semibold" : "text-red-600 font-semibold"}">${r.pulses_inside ?? 0}</td>
         </tr>`).join("")}
         <tr class="bg-slate-50">
           <td colspan="6" class="font-bold text-right">Total time on site</td>
-          <td class="mono font-bold">${fmtWork(totalMin)}</td><td></td>
+          <td class="tabular-nums whitespace-nowrap font-bold">${fmtWork(totalMin)}</td><td></td>
         </tr></tbody>`;
   }
   $("#nvApply").addEventListener("click", loadNodal);
@@ -287,23 +294,23 @@
     const rows = (data && data.rows) || [];
     if (!rows.length) { $("#staffTable").innerHTML = `<tr><td class="p-6 text-slate-500">No staff yet.</td></tr>`; return; }
     $("#staffTable").innerHTML = `
-      <thead><tr><th>Name</th><th>Code</th><th>Mobile</th><th>Category</th><th>Face</th><th>Kendra &amp; shift</th><th></th></tr></thead>
+      <thead><tr><th scope="col">Name</th><th scope="col">Code</th><th scope="col">Mobile</th><th scope="col">Category</th><th scope="col">Face</th><th scope="col">Kendra &amp; shift</th><th scope="col"></th></tr></thead>
       <tbody>${rows.map((r) => `
         <tr>
           <td class="font-medium">${esc(r.full_name)}</td>
-          <td class="mono text-slate-500">${esc(r.employee_code || "—")}</td>
-          <td class="mono">${esc(r.mobile_number)}</td>
+          <td class="tabular-nums whitespace-nowrap text-slate-500">${esc(r.employee_code || "—")}</td>
+          <td class="tabular-nums whitespace-nowrap">${esc(r.mobile_number)}</td>
           <td>${r.category === "nodal"
-            ? `<span class="badge bg-violet-100 text-violet-700">NODAL</span>`
-            : `<span class="badge bg-blue-100 text-blue-700">STAFF</span>`}${
-            r.role === "admin" ? ` <span class="badge bg-slate-100 text-slate-600">ADMIN</span>` : ""}</td>
+            ? `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-violet-100 text-violet-700">NODAL</span>`
+            : `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-blue-100 text-blue-700">STAFF</span>`}${
+            r.role === "admin" ? ` <span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-slate-100 text-slate-600">ADMIN</span>` : ""}</td>
           <td>${r.face_registered
-            ? `<span class="badge bg-green-100 text-green-700">Registered</span>`
-            : `<span class="badge bg-amber-100 text-amber-700">Pending</span>`}</td>
+            ? `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-green-100 text-green-700">Registered</span>`
+            : `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-amber-100 text-amber-700">Pending</span>`}</td>
           <td class="text-slate-500">${esc(r.kendra_names || "—")}</td>
           <td>${r.role !== "admin"
             ? `<button data-assign='${esc(r.id)}' data-name='${esc(r.full_name)}' data-cat='${esc(r.category || "staff")}'
-                 class="link-btn">Assign</button>`
+                 class="inline-flex items-center gap-2 rounded px-1 py-1 text-sm font-semibold text-blue-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60">Assign</button>`
             : ""}</td>
         </tr>`).join("")}</tbody>`;
     $$("#staffTable [data-assign]").forEach((b) =>
@@ -340,15 +347,15 @@
     KENDRAS = (data && data.rows) || [];
     if (!KENDRAS.length) { $("#kendraTable").innerHTML = `<tr><td class="p-6 text-slate-500">No kendras yet.</td></tr>`; return; }
     $("#kendraTable").innerHTML = `
-      <thead><tr><th>Name</th><th>Lat</th><th>Long</th><th>Radius</th><th>Verify</th><th>Staff</th><th>Nodal</th><th></th></tr></thead>
+      <thead><tr><th scope="col">Name</th><th scope="col">Lat</th><th scope="col">Long</th><th scope="col">Radius</th><th scope="col">Verify</th><th scope="col">Staff</th><th scope="col">Nodal</th><th scope="col"></th></tr></thead>
       <tbody>${KENDRAS.map((k) => `
         <tr>
           <td class="font-medium">${esc(k.name)}</td>
-          <td class="mono">${k.latitude}</td><td class="mono">${k.longitude}</td>
-          <td class="mono">${k.radius_m} m</td><td class="mono">every ${k.verify_interval_min} min</td>
-          <td><span class="badge bg-blue-50 text-blue-700">${k.staff_count ?? 0}</span></td>
-          <td><span class="badge bg-violet-50 text-violet-700">${k.nodal_count ?? 0}</span></td>
-          <td><button data-kedit="${k.id}" class="link-btn">Edit</button></td>
+          <td class="tabular-nums whitespace-nowrap">${k.latitude}</td><td class="tabular-nums whitespace-nowrap">${k.longitude}</td>
+          <td class="tabular-nums whitespace-nowrap">${k.radius_m} m</td><td class="tabular-nums whitespace-nowrap">every ${k.verify_interval_min} min</td>
+          <td><span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-blue-50 text-blue-700">${k.staff_count ?? 0}</span></td>
+          <td><span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-violet-50 text-violet-700">${k.nodal_count ?? 0}</span></td>
+          <td><button data-kedit="${k.id}" class="inline-flex items-center gap-2 rounded px-1 py-1 text-sm font-semibold text-blue-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60">Edit</button></td>
         </tr>`).join("")}</tbody>`;
     $$("#kendraTable [data-kedit]").forEach((b) =>
       b.addEventListener("click", () => openKendraEdit(b.dataset.kedit)));
@@ -443,30 +450,30 @@
     $("#assignList").innerHTML = KENDRAS.map((k) => {
       const a = byId.get(k.id);
       if (nodal) {
-        return `<div class="assign-row ${a ? "on" : ""}" data-row="${k.id}">
-          <label class="flex items-center gap-3 cursor-pointer">
+        return `<div class="group rounded-xl border border-slate-200 bg-white p-3 data-[selected=true]:border-blue-300 data-[selected=true]:bg-blue-50" data-selected="${!!a}" data-row="${k.id}">
+          <label class="flex flex-wrap items-center gap-3 cursor-pointer">
             <input type="checkbox" data-kid="${k.id}" ${a ? "checked" : ""} class="w-4 h-4 accent-violet-600"/>
             <span class="text-sm font-medium">${esc(k.name)}</span>
             <span class="ml-auto text-xs ${a ? "text-violet-700 font-semibold" : "text-slate-400"}">${a ? "Can visit" : "Not assigned"}</span>
           </label>
         </div>`;
       }
-      return `<div class="assign-row ${a ? "on" : ""}" data-row="${k.id}">
-        <label class="flex items-center gap-3 cursor-pointer">
+      return `<div class="group rounded-xl border border-slate-200 bg-white p-3 data-[selected=true]:border-blue-300 data-[selected=true]:bg-blue-50" data-selected="${!!a}" data-row="${k.id}">
+        <label class="flex flex-wrap items-center gap-3 cursor-pointer">
           <input type="radio" name="assignKendra" data-kid="${k.id}" ${a ? "checked" : ""} class="w-4 h-4 accent-blue-600"/>
           <span class="text-sm font-medium">${esc(k.name)}</span>
-          ${a ? `<span class="badge bg-green-100 text-green-700 ml-auto">Current · ${esc(a.check_in_start || "—")}–${esc(a.day_end || "—")}</span>` : ""}
+          ${a ? `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-green-100 text-green-700 ml-auto">Current · ${esc(a.check_in_start || "—")}–${esc(a.day_end || "—")}</span>` : ""}
         </label>
-        <div class="shift">
-          <div><label class="lbl">Check-in time</label>
-            <input type="time" data-start value="${(a && a.check_in_start) || "08:00"}" class="inp mt-1 w-full"/></div>
-          <div><label class="lbl">Day ends</label>
-            <input type="time" data-end value="${(a && a.day_end) || "18:00"}" class="inp mt-1 w-full"/></div>
+        <div class="mt-3 hidden grid-cols-2 gap-2 group-data-[selected=true]:grid">
+          <div class="min-w-0"><label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Check-in time</label>
+            <input type="time" data-start value="${(a && a.check_in_start) || "08:00"}" class="mt-1 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100"/></div>
+          <div><label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Day ends</label>
+            <input type="time" data-end value="${(a && a.day_end) || "18:00"}" class="mt-1 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100"/></div>
           <div class="col-span-2 flex items-center justify-between gap-2 flex-wrap">
             <span class="text-[11px] text-slate-500">Check-in closes 30 min after the check-in time.</span>
             <span class="flex gap-2">
-              ${a ? `<button type="button" data-remove="${k.id}" class="btn-ghost">Remove</button>` : ""}
-              <button type="button" data-save="${k.id}" class="btn-primary">${a ? "Update shift" : "Assign shift"}</button>
+              ${a ? `<button type="button" data-remove="${k.id}" class="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60">Remove</button>` : ""}
+              <button type="button" data-save="${k.id}" class="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60">${a ? "Update shift" : "Assign shift"}</button>
             </span>
           </div>
         </div>
@@ -479,18 +486,19 @@
     } else {
       $$('#assignList input[type=radio]').forEach((rb) =>
         rb.addEventListener("change", () => {
-          $$("#assignList .assign-row").forEach((row) =>
-            row.classList.toggle("on", row.dataset.row === rb.dataset.kid));
+          $$("#assignList [data-row]").forEach((row) => {
+            row.dataset.selected = String(row.dataset.row === rb.dataset.kid);
+          });
         }));
       $$("#assignList [data-save]").forEach((b) =>
         b.addEventListener("click", () => saveShift(b.dataset.save, b)));
       $$("#assignList [data-remove]").forEach((b) =>
-        b.addEventListener("click", () => removeAssignment(b.dataset.remove)));
+        b.addEventListener("click", () => removeAssignment(b.dataset.remove, b)));
     }
   }
 
   async function toggleNodal(cb) {
-    const row = cb.closest(".assign-row");
+    const row = cb.closest("[data-row]");
     cb.disabled = true;
     const { data, error } = await sb.rpc("admin_assign_kendra", {
       p_staff_id: currentAssign.id, p_kendra_id: cb.dataset.kid, p_allowed: cb.checked,
@@ -499,7 +507,7 @@
     cb.disabled = false;
     if (error) { toast(error.message, "err"); cb.checked = !cb.checked; return; }
     if (data && !data.ok) { toast(data.error || "Failed", "err"); cb.checked = !cb.checked; return; }
-    row.classList.toggle("on", cb.checked);
+    row.dataset.selected = String(cb.checked);
     row.querySelector("span.ml-auto").textContent = cb.checked ? "Can visit" : "Not assigned";
     row.querySelector("span.ml-auto").className =
       `ml-auto text-xs ${cb.checked ? "text-violet-700 font-semibold" : "text-slate-400"}`;
@@ -508,7 +516,7 @@
   }
 
   async function saveShift(kendraId, btn) {
-    const row = $(`#assignList .assign-row[data-row="${kendraId}"]`);
+    const row = $(`#assignList [data-row="${kendraId}"]`);
     const start = row.querySelector("[data-start]").value;
     const end = row.querySelector("[data-end]").value;
     if (!start) { toast("Set the check-in time for this shift.", "err"); return; }
@@ -527,11 +535,13 @@
     await loadKendrasIfVisible();
   }
 
-  async function removeAssignment(kendraId) {
+  async function removeAssignment(kendraId, btn) {
+    busy(btn, true, "Removing…");
     const { data, error } = await sb.rpc("admin_assign_kendra", {
       p_staff_id: currentAssign.id, p_kendra_id: kendraId, p_allowed: false,
       p_check_in_start: null, p_day_end: null,
     });
+    busy(btn, false);
     if (error) { toast(error.message, "err"); return; }
     if (data && !data.ok) { toast(data.error || "Failed", "err"); return; }
     toast("Assignment removed", "ok");
@@ -598,13 +608,13 @@
     $("#bulkPreviewWrap").classList.toggle("hidden", BULK_ROWS.length === 0);
     $("#bulkResultWrap").classList.add("hidden");
     $("#bulkPreview").innerHTML = `
-      <thead><tr><th>Name</th><th>Code</th><th>Mobile</th><th>Role</th><th>Category</th><th>Kendra(s)</th><th>Check-in</th><th>Day ends</th></tr></thead>
+      <thead><tr><th scope="col">Name</th><th scope="col">Code</th><th scope="col">Mobile</th><th scope="col">Role</th><th scope="col">Category</th><th scope="col">Kendra(s)</th><th scope="col">Check-in</th><th scope="col">Day ends</th></tr></thead>
       <tbody>${BULK_ROWS.map((r) => `
-        <tr><td>${esc(r.full_name)}</td><td class="mono">${esc(r.employee_code)}</td>
-        <td class="mono">${esc(r.mobile_number)}</td><td>${esc(r.role)}</td>
-        <td>${r.category === "nodal" ? `<span class="badge bg-violet-100 text-violet-700">NODAL</span>` : `<span class="badge bg-blue-100 text-blue-700">STAFF</span>`}</td>
+        <tr><td>${esc(r.full_name)}</td><td class="tabular-nums whitespace-nowrap">${esc(r.employee_code)}</td>
+        <td class="tabular-nums whitespace-nowrap">${esc(r.mobile_number)}</td><td>${esc(r.role)}</td>
+        <td>${r.category === "nodal" ? `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-violet-100 text-violet-700">NODAL</span>` : `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-blue-100 text-blue-700">STAFF</span>`}</td>
         <td class="text-slate-500">${esc(r.kendra_names)}</td>
-        <td class="mono">${esc(r.check_in_start || "—")}</td><td class="mono">${esc(r.day_end || "—")}</td></tr>`).join("")}</tbody>`;
+        <td class="tabular-nums whitespace-nowrap">${esc(r.check_in_start || "—")}</td><td class="tabular-nums whitespace-nowrap">${esc(r.day_end || "—")}</td></tr>`).join("")}</tbody>`;
     if (!BULK_ROWS.length) toast("No rows found. Check the header row.", "err");
   });
 
@@ -619,13 +629,13 @@
     const okCount = results.filter((r) => r.ok).length;
     $("#bulkResultWrap").classList.remove("hidden");
     $("#bulkResult").innerHTML = `
-      <thead><tr><th>Name</th><th>Code</th><th>Mobile</th><th>Result</th></tr></thead>
+      <thead><tr><th scope="col">Name</th><th scope="col">Code</th><th scope="col">Mobile</th><th scope="col">Result</th></tr></thead>
       <tbody>${results.map((r) => `
         <tr>
-          <td>${esc(r.name)}</td><td class="mono">${esc(r.code || "—")}</td><td class="mono">${esc(r.mobile)}</td>
+          <td>${esc(r.name)}</td><td class="tabular-nums whitespace-nowrap">${esc(r.code || "—")}</td><td class="tabular-nums whitespace-nowrap">${esc(r.mobile)}</td>
           <td>${r.ok
-            ? `<span class="badge bg-green-100 text-green-700">Enrolled</span>`
-            : `<span class="badge bg-red-100 text-red-700">${esc(r.error || "Failed")}</span>`}</td>
+            ? `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-green-100 text-green-700">Enrolled</span>`
+            : `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-red-100 text-red-700">${esc(r.error || "Failed")}</span>`}</td>
         </tr>`).join("")}</tbody>`;
     toast(`${okCount} of ${results.length} enrolled.`, okCount ? "ok" : "err");
     BULK_ROWS = []; $("#xlsxFile").value = "";
