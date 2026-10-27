@@ -55,7 +55,9 @@ data class ActionResult(
     val at: String? = null,
     @SerialName("present_count") val presentCount: Int? = null,
     @SerialName("absent_count") val absentCount: Int? = null,
-    @SerialName("work_minutes") val workMinutes: Int? = null
+    @SerialName("work_minutes") val workMinutes: Int? = null,
+    @SerialName("auto_checked_out") val autoCheckedOut: Boolean? = null,
+    @SerialName("check_out_reason") val checkOutReason: String? = null
 )
 
 @Serializable
@@ -64,7 +66,8 @@ data class TodayRecord(
     @SerialName("check_in_at") val checkInAt: String? = null,
     @SerialName("check_out_at") val checkOutAt: String? = null,
     @SerialName("check_in_kendra") val checkInKendra: String? = null,
-    @SerialName("work_minutes") val workMinutes: Int? = null
+    @SerialName("work_minutes") val workMinutes: Int? = null,
+    @SerialName("check_out_reason") val checkOutReason: String? = null
 )
 
 @Serializable

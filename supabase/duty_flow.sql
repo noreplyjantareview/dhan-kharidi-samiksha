@@ -83,7 +83,8 @@ $$;
 -- CHECK-OUT: closes today's check-in and stores total working minutes.
 -- ---------------------------------------------------------------------
 create or replace function public.record_check_out(
-  p_staff_id uuid, p_lat double precision, p_long double precision
+  p_staff_id uuid, p_lat double precision, p_long double precision,
+  p_reason text default 'manual'
 ) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
@@ -99,7 +100,8 @@ begin
   if v_att.check_out_at is not null then
     return jsonb_build_object('ok', true, 'status', 'already', 'message', 'Already checked out for today.',
       'check_out_at', to_char(v_att.check_out_at at time zone 'Asia/Kolkata','HH24:MI:SS'),
-      'work_minutes', v_att.work_minutes);
+      'work_minutes', v_att.work_minutes,
+      'check_out_reason', v_att.check_out_reason);
   end if;
 
   select * into v_k from public.match_allowed_kendra(p_staff_id, p_lat, p_long) limit 1;
@@ -110,12 +112,14 @@ begin
          check_out_kendra_id = v_k.kendra_id,
          check_out_lat = p_lat,
          check_out_long = p_long,
-         work_minutes = v_min
+         work_minutes = v_min,
+         check_out_reason = coalesce(p_reason, 'manual')
    where id = v_att.id;
 
   return jsonb_build_object('ok', true, 'status', 'checked_out', 'message', 'Check-out recorded.',
     'check_out_at', to_char((now() at time zone 'Asia/Kolkata'),'HH24:MI:SS'),
-    'work_minutes', v_min);
+    'work_minutes', v_min,
+    'check_out_reason', coalesce(p_reason, 'manual'));
 end;
 $$;
 
@@ -149,7 +153,8 @@ begin
       'check_in_at',  to_char(v_att.check_in_at  at time zone 'Asia/Kolkata','HH24:MI:SS'),
       'check_out_at', to_char(v_att.check_out_at at time zone 'Asia/Kolkata','HH24:MI:SS'),
       'check_in_kendra', v_kname,
-      'work_minutes', v_att.work_minutes
+      'work_minutes', v_att.work_minutes,
+      'check_out_reason', v_att.check_out_reason
     ) end,
     'present_count', coalesce(v_p,0),
     'absent_count',  coalesce(v_a,0),
@@ -313,7 +318,10 @@ begin
         a.status                                                      as status,
         a.work_minutes                                                as work_minutes,
         coalesce(pc.cnt,0)                                            as present_count,
-        coalesce(ac.cnt,0)                                            as absent_count
+        coalesce(ac.cnt,0)                                            as absent_count,
+        a.check_out_reason                                            as check_out_reason,
+        coalesce(st.absent_streak_min,0)                              as absent_streak_min,
+        coalesce(sl.silence_min,0)                                    as silence_min
       from public.attendance a
       join public.staff s on s.id = a.staff_id
       left join public.kendras k on k.id = a.check_in_kendra_id
@@ -325,6 +333,39 @@ begin
         select count(*) cnt from public.presence_pulses p
         where p.staff_id = a.staff_id and p.day = a.day and not p.inside
       ) ac on true
+      left join lateral (
+        -- longest run of consecutive absent pulses, in minutes
+        select coalesce(max(run_min),0)::integer as absent_streak_min
+        from (
+          select grp, round(extract(epoch from (max(at) - min(at))) / 60.0) as run_min
+          from (
+            select at, inside,
+                   count(*) filter (where inside) over (
+                     order by at rows between unbounded preceding and 1 preceding) as grp
+              from public.presence_pulses p
+             where p.staff_id = a.staff_id and p.day = a.day
+          ) t
+          where not inside
+          group by grp
+        ) r
+      ) st on true
+      left join lateral (
+        -- longest silence: biggest gap between check-in, pulses and check-out
+        select coalesce(max(round(extract(epoch from (at - prev_at)) / 60.0)),0)::integer as silence_min
+        from (
+          select at, lag(at) over (order by at) as prev_at
+          from (
+            select a.check_in_at as at where a.check_in_at is not null
+            union all
+            select p.at from public.presence_pulses p
+             where p.staff_id = a.staff_id and p.day = a.day
+            union all
+            select coalesce(a.check_out_at,
+                            case when a.day = ((now() at time zone 'Asia/Kolkata')::date)
+                                 then now() end) as at
+          ) s where at is not null
+        ) g where prev_at is not null
+      ) sl on true
       where a.day between v_from and v_to
         and (p_kendra_id is null or a.check_in_kendra_id = p_kendra_id)
         and (coalesce(btrim(p_search),'') = ''

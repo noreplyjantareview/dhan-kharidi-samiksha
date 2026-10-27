@@ -60,9 +60,9 @@ class SupabaseApi {
             put("p_staff_id", staffId); put("p_lat", lat); put("p_long", lon)
         })
 
-    suspend fun checkOut(staffId: String, lat: Double, lon: Double): ActionResult =
+    suspend fun checkOut(staffId: String, lat: Double, lon: Double, reason: String = "manual"): ActionResult =
         rpc("record_check_out", buildJsonObject {
-            put("p_staff_id", staffId); put("p_lat", lat); put("p_long", lon)
+            put("p_staff_id", staffId); put("p_lat", lat); put("p_long", lon); put("p_reason", reason)
         })
 
     suspend fun today(staffId: String): TodayResult =

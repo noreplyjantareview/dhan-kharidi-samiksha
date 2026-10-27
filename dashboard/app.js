@@ -154,7 +154,7 @@
     $("#logsTable").innerHTML = `
       <thead><tr>
         <th>Date</th><th>Staff</th><th>Mobile</th><th>Kendra</th>
-        <th>Check-in</th><th>Check-out</th><th>Work time</th><th>Status</th><th>Present</th><th>Absent</th>
+        <th>Check-in</th><th>Check-out</th><th>Work time</th><th>Status</th><th>Present</th><th>Absent</th><th>Flags</th>
       </tr></thead>
       <tbody>${rows.map((r) => `
         <tr>
@@ -168,7 +168,18 @@
           <td>${statusBadge(r.status)}</td>
           <td class="text-green-600 font-semibold">${r.present_count ?? 0}</td>
           <td class="${(r.absent_count ?? 0) > 0 ? "text-red-600 font-semibold" : "text-slate-400"}">${r.absent_count ?? 0}</td>
+          <td>${flagsBadges(r)}</td>
         </tr>`).join("")}</tbody>`;
+  }
+  function flagsBadges(r) {
+    const out = [];
+    if (r.check_out_reason === "left_area")
+      out.push(`<span class="badge bg-red-600 text-white">LEFT AREA</span>`);
+    if ((r.absent_streak_min ?? 0) >= 15)
+      out.push(`<span class="badge bg-red-100 text-red-700">OUT ${r.absent_streak_min}m</span>`);
+    if ((r.silence_min ?? 0) > 60)
+      out.push(`<span class="badge bg-amber-100 text-amber-700">DARK ${r.silence_min}m</span>`);
+    return out.length ? out.join(" ") : `<span class="text-slate-400">—</span>`;
   }
   function fmtWork(m) {
     if (m === null || m === undefined) return "—";

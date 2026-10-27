@@ -1,6 +1,7 @@
 package com.vsk.attendance.ui
 
 import android.app.Application
+import android.location.Location
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.vsk.attendance.data.Kendra
@@ -30,12 +31,18 @@ data class AttendanceUi(
     val absentCount: Int = 0,
     val lastPulseAt: String? = null,
     val workMinutes: Int? = null,
+    val checkOutReason: String? = null,
     val message: String = "Waiting for location…",
     val clock: String = "",
     val running: Boolean = false
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
+
+    companion object {
+        private const val MOCK_MSG =
+            "Mock location detected — turn off fake-GPS apps to mark duty."
+    }
 
     private val api = SupabaseApi()
     private val session = SessionStore(app)
@@ -64,6 +71,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var lastPulseMillis: Long = 0L
     private var lastLat: Double? = null
     private var lastLon: Double? = null
+    private var lastFixMock = false
 
     init {
         if (!api.configured) {
@@ -114,6 +122,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ------------------------------------------------------------------
     fun onDuty() {
         val s = _staff.value ?: return
+        if (lastFixMock) { _attendance.value = _attendance.value.copy(message = MOCK_MSG); return }
         val lat = lastLat
         val lon = lastLon
         if (lat == null || lon == null) {
@@ -145,6 +154,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun offDuty() {
         val s = _staff.value ?: return
+        if (lastFixMock) { _attendance.value = _attendance.value.copy(message = MOCK_MSG); return }
         val lat = lastLat
         val lon = lastLon
         if (lat == null || lon == null) {
@@ -155,7 +165,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch {
             try {
-                val r = api.checkOut(s.id, lat, lon)
+                val r = api.checkOut(s.id, lat, lon, "manual")
                 if (r.ok) {
                     _attendance.value = _attendance.value.copy(
                         checkOutAt = r.checkOutAt ?: _attendance.value.checkOutAt,
@@ -229,6 +239,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     absentCount = t.absentCount,
                     lastPulseAt = t.lastPulseAt,
                     workMinutes = t.record?.workMinutes,
+                    checkOutReason = t.record?.checkOutReason,
                     running = true,
                     clock = GeoUtils.nowClockIST()
                 )
@@ -241,11 +252,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         message = "Location error: ${e.message}", running = false
                     )
                 }
-                .collect { loc -> onFix(s.id, allowed, loc.latitude, loc.longitude) }
+                .collect { loc -> onFix(s.id, allowed, loc) }
         }
     }
 
-    private suspend fun onFix(staffId: String, allowed: List<Kendra>, lat: Double, lon: Double) {
+    private fun isMock(loc: Location): Boolean =
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) loc.isMock
+        else loc.isFromMockProvider
+
+    private suspend fun onFix(staffId: String, allowed: List<Kendra>, loc: Location) {
+        lastFixMock = isMock(loc)
+        if (lastFixMock) {
+            _attendance.value = _attendance.value.copy(
+                clock = GeoUtils.nowClockIST(), running = true, message = MOCK_MSG
+            )
+            return
+        }
+        val lat = loc.latitude
+        val lon = loc.longitude
         lastLat = lat
         lastLon = lon
         val near = AttendanceRules.nearest(allowed, lat, lon)
@@ -271,14 +295,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val r = api.pulse(staffId, lat, lon)
                 if (r.ok) {
                     lastPulseMillis = System.currentTimeMillis()
+                    val auto = r.autoCheckedOut == true
                     _attendance.value = _attendance.value.copy(
                         presentCount = r.presentCount ?: _attendance.value.presentCount,
                         absentCount = r.absentCount ?: _attendance.value.absentCount,
                         lastPulseAt = r.at ?: _attendance.value.lastPulseAt,
-                        message = if (r.inside == true)
-                            "Presence verified at ${r.kendraName ?: "duty kendra"} (${r.at})."
-                        else
-                            "Absent at last verification (${r.at}) — outside duty area."
+                        checkOutAt = if (auto) r.checkOutAt ?: _attendance.value.checkOutAt
+                                     else _attendance.value.checkOutAt,
+                        workMinutes = if (auto) r.workMinutes ?: _attendance.value.workMinutes
+                                      else _attendance.value.workMinutes,
+                        checkOutReason = if (auto) r.checkOutReason ?: _attendance.value.checkOutReason
+                                         else _attendance.value.checkOutReason,
+                        message = when {
+                            auto -> r.message ?: "Duty auto-closed: outside the duty area too long."
+                            r.inside == true -> "Presence verified at ${r.kendraName ?: "duty kendra"} (${r.at})."
+                            else -> "Absent at last verification (${r.at}) — outside duty area. " +
+                                    "Duty auto-closes after 30 minutes outside."
+                        }
                     )
                 }
             } catch (e: Exception) {
@@ -286,11 +319,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             AttendanceAction.CHECK_OUT -> try {
-                val r = api.checkOut(staffId, lat, lon)
+                val r = api.checkOut(staffId, lat, lon, "day_end")
                 if (r.ok) {
                     _attendance.value = _attendance.value.copy(
                         checkOutAt = r.checkOutAt ?: _attendance.value.checkOutAt,
                         workMinutes = r.workMinutes ?: _attendance.value.workMinutes,
+                        checkOutReason = r.checkOutReason ?: _attendance.value.checkOutReason,
                         message = r.message ?: "Checked out."
                     )
                 }

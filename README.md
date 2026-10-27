@@ -41,6 +41,20 @@ check-in time are flagged `late`.
 Presence pulses are the anti-absenteeism trail: arriving-then-leaving, or never staying, shows up
 as absent pulses. Geofence math and windows are enforced server-side.
 
+### Strict monitoring (migration 6)
+
+- **Day-quality flags** — `admin_attendance_log()` returns `absent_streak_min` (longest continuous
+  run of absent pulses) and `silence_min` (longest gap between check-in, pulses and check-out —
+  i.e. the app was closed or GPS was off). The dashboard log shows them as badges:
+  `OUT xm` (absent streak ≥ 15 min), `DARK xm` (silence > 60 min), `LEFT AREA` (auto-closed, below).
+- **Left-area auto check-out** — when `record_pulse()` sees a trailing run of absent pulses spanning
+  **30 minutes or more**, it closes the duty server-side with `check_out_reason = 'left_area'` and
+  `work_minutes` counted only up to the last verified **present** pulse. The day then stays locked
+  like any checked-out day. The app shows the reason on the duty-closed card.
+- **Mock-location rejection** — the app refuses to use GPS fixes flagged as mock
+  (`Location.isMock` / `isFromMockProvider`), so fake-GPS apps cannot pulse, check in or check out;
+  the screen says why.
+
 ### Face verification (proxy-attendance deterrent)
 
 - At first login the staff captures one selfie **in the app**; only a numeric template is stored on
@@ -73,6 +87,8 @@ Run **all** migrations in the Supabase **SQL Editor** (New query → paste → R
 5. [`supabase/face_template_v2.sql`](supabase/face_template_v2.sql) — lets already-registered staff
    upgrade their face template once (v1 geometry-only → v2 with appearance signature); v2
    templates stay overwrite-protected.
+6. [`supabase/strict_monitor.sql`](supabase/strict_monitor.sql) — strict monitoring: day-quality
+   flags in the attendance log, left-area auto check-out, and the check-out reason column.
 
 All are re-runnable. Verification `SELECT`s at the bottom of each confirm success.
 
@@ -184,6 +200,7 @@ supabase/admin_dashboard.sql     # admin auth + secured dashboard RPCs + bulk en
 supabase/kendra_edit.sql         # admin_update_kendra() — edit lat/long & windows
 supabase/duty_flow.sql           # work_minutes, face template, 30-min buffer, late rule
 supabase/face_template_v2.sql    # one-time v1 -> v2 face template upgrade
+supabase/strict_monitor.sql      # day-quality flags, left-area auto check-out, check-out reason
 dashboard/                       # no-build web admin (index.html, app.js, config.js, styles.css)
 app/src/main/java/com/vsk/attendance/
   MainActivity.kt                # entry, permission gate, staff-only routing

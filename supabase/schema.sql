@@ -66,6 +66,7 @@ create table if not exists public.attendance (
   status             text not null default 'present'
                      check (status in ('present','late')),
   work_minutes       integer,                             -- total duty duration, set at check-out
+  check_out_reason   text                                 -- manual / day_end / left_area
   unique (staff_id, day)
 );
 
@@ -245,11 +246,18 @@ create or replace function public.record_pulse(
 ) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
-  v_k    record;
-  v_date date := ((now() at time zone 'Asia/Kolkata')::date);
-  v_inside boolean := false;
-  v_absent integer;
-  v_present integer;
+  v_k        record;
+  v_att      public.attendance%rowtype;
+  v_date     date := ((now() at time zone 'Asia/Kolkata')::date);
+  v_inside   boolean := false;
+  v_absent   integer;
+  v_present  integer;
+  v_rec      record;
+  v_run_start timestamptz := null;   -- oldest pulse of the trailing absent run
+  v_run_min  integer := 0;
+  v_last_present timestamptz;
+  v_work     integer;
+  v_auto     boolean := false;
 begin
   select * into v_k from public.match_allowed_kendra(p_staff_id, p_lat, p_long) limit 1;
   if v_k.kendra_id is null then
@@ -267,12 +275,52 @@ begin
     into v_present, v_absent
   from public.presence_pulses where staff_id = p_staff_id and day = v_date;
 
+  -- Left-area auto check-out: a trailing run of absent pulses spanning
+  -- >= 30 minutes closes the duty; work time counts verified presence only.
+  if not v_inside then
+    select * into v_att from public.attendance where staff_id = p_staff_id and day = v_date;
+    if v_att.id is not null and v_att.check_in_at is not null and v_att.check_out_at is null then
+      for v_rec in
+        select at, inside from public.presence_pulses
+         where staff_id = p_staff_id and day = v_date
+         order by at desc
+      loop
+        exit when v_rec.inside;
+        v_run_start := v_rec.at;
+      end loop;
+      if v_run_start is not null then
+        v_run_min := round(extract(epoch from (now() - v_run_start)) / 60.0)::integer;
+      end if;
+      if v_run_min >= 30 then
+        select max(at) into v_last_present
+          from public.presence_pulses
+         where staff_id = p_staff_id and day = v_date and inside;
+        v_work := round(extract(epoch from
+                    (coalesce(v_last_present, v_att.check_in_at) - v_att.check_in_at)) / 60.0)::integer;
+        update public.attendance
+           set check_out_at = now(),
+               check_out_reason = 'left_area',
+               work_minutes = v_work
+         where id = v_att.id;
+        v_auto := true;
+      end if;
+    end if;
+  end if;
+
   return jsonb_build_object('ok', true,
     'inside', v_inside,
     'kendra_name', case when v_inside then v_k.kendra_name else null end,
     'distance_m', round(v_k.dist_m::numeric,1),
     'at', to_char((now() at time zone 'Asia/Kolkata'),'HH24:MI:SS'),
-    'present_count', v_present, 'absent_count', v_absent);
+    'present_count', v_present, 'absent_count', v_absent,
+    'auto_checked_out', v_auto,
+    'check_out_at', case when v_auto
+        then to_char((now() at time zone 'Asia/Kolkata'),'HH24:MI:SS') else null end,
+    'work_minutes', case when v_auto then v_work else null end,
+    'check_out_reason', case when v_auto then 'left_area' else null end,
+    'message', case when v_auto then
+        'Duty auto-closed: outside the duty area for 30 minutes or more. Work time stored up to the last verified presence.'
+      else null end);
 end;
 $$;
 
@@ -280,7 +328,8 @@ $$;
 -- CHECK-OUT: closes today's check-in (fires at day_end or manual stop).
 -- ---------------------------------------------------------------------
 create or replace function public.record_check_out(
-  p_staff_id uuid, p_lat double precision, p_long double precision
+  p_staff_id uuid, p_lat double precision, p_long double precision,
+  p_reason text default 'manual'
 ) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
@@ -296,7 +345,8 @@ begin
   if v_att.check_out_at is not null then
     return jsonb_build_object('ok', true, 'status', 'already', 'message', 'Already checked out for today.',
       'check_out_at', to_char(v_att.check_out_at at time zone 'Asia/Kolkata','HH24:MI:SS'),
-      'work_minutes', v_att.work_minutes);
+      'work_minutes', v_att.work_minutes,
+      'check_out_reason', v_att.check_out_reason);
   end if;
 
   select * into v_k from public.match_allowed_kendra(p_staff_id, p_lat, p_long) limit 1;
@@ -307,12 +357,14 @@ begin
          check_out_kendra_id = v_k.kendra_id,
          check_out_lat = p_lat,
          check_out_long = p_long,
-         work_minutes = v_min
+         work_minutes = v_min,
+         check_out_reason = coalesce(p_reason, 'manual')
    where id = v_att.id;
 
   return jsonb_build_object('ok', true, 'status', 'checked_out', 'message', 'Check-out recorded.',
     'check_out_at', to_char((now() at time zone 'Asia/Kolkata'),'HH24:MI:SS'),
-    'work_minutes', v_min);
+    'work_minutes', v_min,
+    'check_out_reason', coalesce(p_reason, 'manual'));
 end;
 $$;
 
@@ -346,7 +398,8 @@ begin
       'check_in_at',  to_char(v_att.check_in_at  at time zone 'Asia/Kolkata','HH24:MI:SS'),
       'check_out_at', to_char(v_att.check_out_at at time zone 'Asia/Kolkata','HH24:MI:SS'),
       'check_in_kendra', v_kname,
-      'work_minutes', v_att.work_minutes
+      'work_minutes', v_att.work_minutes,
+      'check_out_reason', v_att.check_out_reason
     ) end,
     'present_count', coalesce(v_p,0),
     'absent_count',  coalesce(v_a,0),

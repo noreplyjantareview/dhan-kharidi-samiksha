@@ -191,8 +191,14 @@ fun AttendanceScreen(vm: MainViewModel) {
                 Column(Modifier.padding(16.dp)) {
                     Text("Duty closed for today", fontWeight = FontWeight.Bold)
                     Text(
-                        "Your working time is stored. On Duty stays locked until tomorrow — " +
-                                "contact your admin if this is wrong.",
+                        if (att.checkOutReason == "left_area")
+                            "Duty was auto-closed because you stayed outside the duty area for " +
+                                    "30 minutes or more. Work time is stored up to your last verified " +
+                                    "presence. On Duty stays locked until tomorrow — contact your admin " +
+                                    "if this is wrong."
+                        else
+                            "Your working time is stored. On Duty stays locked until tomorrow — " +
+                                    "contact your admin if this is wrong.",
                         style = MaterialTheme.typography.bodySmall, color = Slate,
                         modifier = Modifier.padding(top = 4.dp)
                     )
