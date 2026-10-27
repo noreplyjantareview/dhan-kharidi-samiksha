@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.vsk.attendance.face.FaceGeometry
 import com.vsk.attendance.ui.AttendanceScreen
 import com.vsk.attendance.ui.FaceEnrollScreen
 import com.vsk.attendance.ui.LoginScreen
@@ -89,7 +90,8 @@ fun App(vm: MainViewModel = viewModel()) {
         staff == null -> LoginScreen(vm)
         staff?.role == "admin" -> AdminNotice(vm)
         !hasPerm -> PermissionGate { permissionLauncher.launch(REQUIRED_PERMISSIONS) }
-        staff?.faceTemplate == null -> FaceEnrollScreen(vm)
+        staff?.faceTemplate == null || FaceGeometry.needsReenroll(staff?.faceTemplate.orEmpty()) ->
+            FaceEnrollScreen(vm)
         else -> AttendanceScreen(vm)
     }
 }

@@ -213,7 +213,10 @@ begin
   if not exists (select 1 from public.staff where id = p_staff_id) then
     return jsonb_build_object('ok', false, 'error', 'Staff not found.');
   end if;
-  if exists (select 1 from public.staff where id = p_staff_id and face_template is not null) then
+  -- A v2 template (contains the "app" signature) can never be overwritten.
+  -- A v1 template or NULL is replaceable, which is the one-time upgrade path.
+  if exists (select 1 from public.staff
+              where id = p_staff_id and face_template like '%"app"%') then
     return jsonb_build_object('ok', false, 'error', 'Face already registered for this user.');
   end if;
   update public.staff set face_template = btrim(p_template) where id = p_staff_id;

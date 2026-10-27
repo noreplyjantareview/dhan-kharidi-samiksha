@@ -40,8 +40,9 @@ fun FaceEnrollScreen(vm: MainViewModel) {
         Text("Face registration", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Text(
             "One-time setup for ${staff?.fullName ?: "this user"}. Hold the phone at face level in good " +
-                "light and capture. Only the geometry of your face is stored on your account — no photo " +
-                "is kept. Every On Duty / Off Duty after this must match this registration.",
+                "light and capture. Only a numeric face signature (shape + appearance pattern) is stored " +
+                "on your account — no photo is kept. Every On Duty / Off Duty after this must match this " +
+                "registration, so nobody else can mark duty for you.",
             style = MaterialTheme.typography.bodyMedium,
             color = Color(0xFF64748B),
             modifier = Modifier.padding(top = 6.dp, bottom = 16.dp)
@@ -56,10 +57,10 @@ fun FaceEnrollScreen(vm: MainViewModel) {
                 FaceCaptureCard(
                     buttonLabel = if (busy) "Saving registration…" else "Capture my face",
                     enabled = !busy,
-                    onFace = { face, w, h ->
+                    onFace = { face, w, h, bitmap ->
                         val issue = FaceGeometry.qualityIssue(face, w, h)
                         if (issue != null) { msg = issue; return@FaceCaptureCard }
-                        val template = FaceGeometry.buildTemplate(face)
+                        val template = FaceGeometry.buildTemplate(face, bitmap)
                         if (template == null) {
                             msg = "Face not clear enough — try again in better light."
                             return@FaceCaptureCard

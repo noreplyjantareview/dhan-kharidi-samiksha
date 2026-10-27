@@ -1,5 +1,7 @@
 package com.vsk.attendance.face
 
+import android.graphics.Bitmap
+import android.graphics.Matrix
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -43,7 +45,7 @@ import java.util.concurrent.Executors
 @Composable
 fun FaceCaptureCard(
     buttonLabel: String,
-    onFace: (face: Face, imgW: Int, imgH: Int) -> Unit,
+    onFace: (face: Face, imgW: Int, imgH: Int, bitmap: Bitmap) -> Unit,
     onError: (String) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
@@ -123,14 +125,22 @@ fun FaceCaptureCard(
                             return
                         }
                         val input = InputImage.fromMediaImage(media, image.imageInfo.rotationDegrees)
-                        val w = input.width
-                        val h = input.height
+                        val base = image.toBitmap()
+                        val rot = image.imageInfo.rotationDegrees % 360
+                        val upright = if (rot != 0) {
+                            Bitmap.createBitmap(
+                                base, 0, 0, base.width, base.height,
+                                Matrix().apply { postRotate(rot.toFloat()) }, true
+                            )
+                        } else base
+                        val w = upright.width
+                        val h = upright.height
                         detector.process(input)
                             .addOnSuccessListener { faces ->
                                 when {
                                     faces.isEmpty() -> onError("No face detected — hold the phone at face level.")
                                     faces.size > 1 -> onError("Keep only one face in the frame.")
-                                    else -> onFace(faces[0], w, h)
+                                    else -> onFace(faces[0], w, h, upright)
                                 }
                             }
                             .addOnFailureListener { onError("Face detection failed — try again.") }

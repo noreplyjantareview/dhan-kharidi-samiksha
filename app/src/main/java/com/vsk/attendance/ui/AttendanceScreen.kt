@@ -243,10 +243,10 @@ fun AttendanceScreen(vm: MainViewModel) {
                         FaceCaptureCard(
                             buttonLabel = "Capture & verify",
                             buttonColor = if (action == FaceAction.ON) Green else Red,
-                            onFace = { face, w, h ->
+                            onFace = { face, w, h, bitmap ->
                                 val issue = FaceGeometry.qualityIssue(face, w, h)
                                 if (issue != null) { faceMsg = issue; return@FaceCaptureCard }
-                                val res = FaceGeometry.match(template, face)
+                                val res = FaceGeometry.match(template, face, bitmap)
                                 if (res.ok) {
                                     faceAction = null
                                     faceMsg = null

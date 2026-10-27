@@ -22,7 +22,7 @@ the dashboard · GitHub Actions to build the APK and deploy the dashboard.
 ```
 Staff opens app → types registered mobile → login_by_mobile() returns the staff
                     record + their allowed kendra list (fixed = 1, multi = several)
-        │  first login only: face registration (geometry template stored, no photo)
+        │  first login only: face registration (numeric signature stored, no photo)
         ▼
 App streams GPS (foreground) while open
         ├─ staff taps "On Duty"  → face check vs stored template → record_check_in()
@@ -43,12 +43,18 @@ as absent pulses. Geofence math and windows are enforced server-side.
 
 ### Face verification (proxy-attendance deterrent)
 
-- At first login the staff captures one selfie **in the app**; only the normalized face geometry
-  (landmarks + jaw contour, scaled/rotated/translated to eye reference) is stored on the staff
-  record — **no photo is stored or uploaded, ever**.
-- Every On Duty / Off Duty opens the camera, requires one clear frontal face, and compares its
-  geometry against the stored template. A mismatch refuses the punch.
-- The template is enroll-once: `save_face_template()` rejects later overwrites.
+- At first login the staff captures one selfie **in the app**; only a numeric template is stored on
+  the staff record — **no photo is stored or uploaded, ever**. The template (v2) holds two signals,
+  both normalized to eye midpoint / eye distance:
+  1. landmark + jaw-contour **geometry**, and
+  2. an aligned 32×32 high-pass grayscale **appearance signature** (1024 numbers, base64).
+  Geometry alone is nearly identical for every frontal face, so the appearance signature is what
+  actually separates one person from another; a punch needs **both** checks to pass.
+- Every On Duty / Off Duty opens the camera, requires one clear frontal face, and compares both
+  signals against the stored template. A mismatch refuses the punch and shows the match score.
+- The template is enroll-once: `save_face_template()` rejects overwriting a v2 template. v1
+  (geometry-only) templates are replaced once, automatically, the next time the staff registers —
+  see migration 5.
 
 ---
 
@@ -64,6 +70,9 @@ Run **all** migrations in the Supabase **SQL Editor** (New query → paste → R
 4. [`supabase/duty_flow.sql`](supabase/duty_flow.sql) — On/Off Duty flow: `work_minutes` stored at
    check-out, face-template column + `save_face_template()`, 30-min check-in buffer, 15-min late
    rule, and the new fields in `get_today` / `admin_attendance_log` / `login_by_mobile`.
+5. [`supabase/face_template_v2.sql`](supabase/face_template_v2.sql) — lets already-registered staff
+   upgrade their face template once (v1 geometry-only → v2 with appearance signature); v2
+   templates stay overwrite-protected.
 
 All are re-runnable. Verification `SELECT`s at the bottom of each confirm success.
 
@@ -174,13 +183,14 @@ supabase/schema.sql              # base: tables + staff/attendance RPCs
 supabase/admin_dashboard.sql     # admin auth + secured dashboard RPCs + bulk enroll
 supabase/kendra_edit.sql         # admin_update_kendra() — edit lat/long & windows
 supabase/duty_flow.sql           # work_minutes, face template, 30-min buffer, late rule
+supabase/face_template_v2.sql    # one-time v1 -> v2 face template upgrade
 dashboard/                       # no-build web admin (index.html, app.js, config.js, styles.css)
 app/src/main/java/com/vsk/attendance/
   MainActivity.kt                # entry, permission gate, staff-only routing
   data/{Models,SupabaseApi,SessionStore}.kt
   util/GeoUtils.kt               # Haversine + IST clock
   location/{LocationHelper,AttendanceRules}.kt
-  face/{FaceGeometry,FaceCaptureCard}.kt  # landmark template match + CameraX capture
+  face/{FaceGeometry,FaceCaptureCard}.kt  # geometry + appearance template match, CameraX capture
   ui/{MainViewModel,LoginScreen,FaceEnrollScreen,AttendanceScreen}.kt + theme/
 .github/workflows/               # build-apk.yml, deploy-dashboard.yml
 ```
