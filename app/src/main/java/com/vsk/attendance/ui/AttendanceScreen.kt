@@ -51,15 +51,18 @@ fun AttendanceScreen(vm: MainViewModel) {
     var faceAction by remember { mutableStateOf<FaceAction?>(null) }
     var faceMsg by remember { mutableStateOf<String?>(null) }
 
-    val checkedIn = att.checkInAt != null
-    val checkedOut = att.checkOutAt != null
+    val nodal = staff?.isNodal == true
+    val checkedIn = !nodal && att.checkInAt != null
+    val checkedOut = !nodal && att.checkOutAt != null
 
     val statusColor = when {
+        nodal -> if (att.visits.isEmpty()) Blue else Green
         checkedOut -> Slate
         checkedIn -> if (att.dayStatus == "late") Amber else Green
         else -> Blue
     }
     val statusText = when {
+        nodal -> if (att.visits.isEmpty()) "NO VISIT YET" else "VISITS RECORDED"
         checkedOut -> "DUTY COMPLETE"
         checkedIn -> if (att.dayStatus == "late") "ON DUTY • LATE" else "ON DUTY"
         else -> "NOT ON DUTY"
@@ -77,13 +80,14 @@ fun AttendanceScreen(vm: MainViewModel) {
             Column(Modifier.weight(1f)) {
                 Text("Dhan Kharidi Samiksha", style = MaterialTheme.typography.labelMedium, color = Slate)
                 Text(staff?.fullName ?: "", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text(staff?.mobileNumber ?: "", style = MaterialTheme.typography.bodySmall, color = Slate)
             }
             TextButton(onClick = { vm.logout() }) { Text("Sign out", color = Slate) }
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 12.dp)) {
-            Chip(if (staff?.dutyType == "multi") "Multi-location duty" else "Fixed duty")
-            Chip(staff?.mobileNumber ?: "")
+            Chip(if (nodal) "Nodal officer" else "Fixed duty", if (nodal) Amber else Blue)
+            staff?.employeeCode?.takeIf { it.isNotBlank() }?.let { Chip(it, Slate) }
         }
 
         // Status card
@@ -99,15 +103,21 @@ fun AttendanceScreen(vm: MainViewModel) {
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.padding(top = 4.dp))
                 Spacer(Modifier.height(14.dp))
-                StatusRow("On duty", att.checkInAt?.let { t ->
-                    t + (att.checkInKendra?.let { " • $it" } ?: "")
-                } ?: "—")
-                StatusRow("Off duty", att.checkOutAt ?: "—")
-                if (checkedOut) {
-                    Spacer(Modifier.height(10.dp))
-                    Text("Total working time: ${fmtWork(att.workMinutes)}",
-                        color = Color.White, fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.titleMedium)
+                if (nodal) {
+                    StatusRow("Kendras visited", "${att.visits.size}")
+                    StatusRow("Time on site", fmtWork(att.visits.sumOf { it.minutes }))
+                    StatusRow("Last verified", att.lastPulseAt ?: "—")
+                } else {
+                    StatusRow("On duty", att.checkInAt?.let { t ->
+                        t + (att.checkInKendra?.let { " • $it" } ?: "")
+                    } ?: "—")
+                    StatusRow("Off duty", att.checkOutAt ?: "—")
+                    if (checkedOut) {
+                        Spacer(Modifier.height(10.dp))
+                        Text("Total working time: ${fmtWork(att.workMinutes)}",
+                            color = Color.White, fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleMedium)
+                    }
                 }
             }
         }
@@ -128,6 +138,36 @@ fun AttendanceScreen(vm: MainViewModel) {
                     att.inside?.let {
                         Chip(if (it) "Inside duty area" else "Outside duty area",
                             if (it) Green else Red)
+                    }
+                }
+            }
+        }
+
+        // Nodal: today's visit stamps
+        if (nodal) {
+            Spacer(Modifier.height(12.dp))
+            Card(modifier = Modifier.fillMaxWidth(), shape = CardShape,
+                colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Today's visits", fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
+                    if (att.visits.isEmpty()) {
+                        Text("No visit recorded yet. Stand inside a kendra and tap the button below.",
+                            style = MaterialTheme.typography.bodySmall, color = Slate)
+                    } else {
+                        att.visits.forEach { v ->
+                            Row(Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(v.kendra ?: "Kendra",
+                                        fontWeight = FontWeight.Medium,
+                                        style = MaterialTheme.typography.bodyMedium)
+                                    Text("Arrived ${v.checkInAt ?: "—"} • last seen ${v.lastPulseAt ?: "—"}",
+                                        style = MaterialTheme.typography.bodySmall, color = Slate)
+                                }
+                                Text(fmtWork(v.minutes), fontWeight = FontWeight.Bold, color = Green)
+                            }
+                        }
                     }
                 }
             }
@@ -161,15 +201,19 @@ fun AttendanceScreen(vm: MainViewModel) {
         Card(modifier = Modifier.fillMaxWidth(), shape = CardShape,
             colors = CardDefaults.cardColors(containerColor = Color.White)) {
             Column(Modifier.padding(16.dp)) {
-                Text("Your duty kendra(s)", fontWeight = FontWeight.Bold)
+                Text(if (nodal) "Kendras you may visit" else "Your duty kendra", fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
                 if (kendras.isEmpty()) {
                     Text("None assigned.", color = Slate)
                 } else {
                     kendras.forEach { k ->
+                        val shift = when {
+                            nodal || k.checkInStart == null -> "visit any time"
+                            else -> "your shift ${k.checkInStart} to ${k.checkInEnd ?: "—"}, " +
+                                    "day ends ${k.dayEnd ?: "—"}"
+                        }
                         Text(
-                            "• ${k.name} — check-in ${k.checkInStart} to ${k.checkInEnd}, " +
-                                    "day ends ${k.dayEnd}, verify every ${k.verifyIntervalMin} min, " +
+                            "• ${k.name} — $shift, verify every ${k.verifyIntervalMin} min, " +
                                     "radius ${k.radiusM} m",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color(0xFF334155),
@@ -184,6 +228,17 @@ fun AttendanceScreen(vm: MainViewModel) {
 
         // Actions
         when {
+            nodal -> Button(
+                onClick = { faceMsg = null; faceAction = FaceAction.ON },
+                enabled = kendras.isNotEmpty(),
+                colors = ButtonDefaults.buttonColors(containerColor = Green),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth().height(56.dp)
+            ) {
+                Text("Record visit here — face check",
+                    fontSize = MaterialTheme.typography.titleMedium.fontSize)
+            }
+
             checkedOut -> Card(
                 modifier = Modifier.fillMaxWidth(), shape = CardShape,
                 colors = CardDefaults.cardColors(containerColor = Color(0xFFE2E8F0))
@@ -235,7 +290,11 @@ fun AttendanceScreen(vm: MainViewModel) {
             Card(shape = CardShape, colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.padding(16.dp)) {
                     Text(
-                        if (action == FaceAction.ON) "Face check — On Duty" else "Face check — Off Duty",
+                        when {
+                            action == FaceAction.ON && nodal -> "Face check — record visit"
+                            action == FaceAction.ON -> "Face check — On Duty"
+                            else -> "Face check — Off Duty"
+                        },
                         style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold
                     )
                     Text(
@@ -298,5 +357,8 @@ private fun StatusRow(label: String, value: String) {
     }
 }
 
-private fun fmtWork(m: Int?): String =
-    if (m == null) "—" else "${m / 60} h ${m % 60} min"
+private fun fmtWork(m: Int?): String = when {
+    m == null -> "—"
+    m < 60 -> "$m min"
+    else -> "${m / 60} h ${m % 60} min"
+}

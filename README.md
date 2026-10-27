@@ -21,12 +21,13 @@ the dashboard · GitHub Actions to build the APK and deploy the dashboard.
 
 ```
 Staff opens app → types registered mobile → login_by_mobile() returns the staff
-                    record + their allowed kendra list (fixed = 1, multi = several)
+                    record + their allowed kendra list + employee code & category (staff / nodal)
         │  first login only: face registration (numeric signature stored, no photo)
         ▼
 App streams GPS (foreground) while open
         ├─ staff taps "On Duty"  → face check vs stored template → record_check_in()
-        ├─ every verify_interval_min while on duty               → record_pulse() (present/absent)
+        ├─ nodal taps "On Duty" at a kendra → face check → visit stamped (arrival time)
+        ├─ every verify_interval_min while on duty / visit open  → record_pulse() (present/absent)
         ├─ staff taps "Off Duty" → face check vs stored template → record_check_out()
         └─ forgotten? at/after day_end the app auto-checks-out   → record_check_out()
         ▼
@@ -34,9 +35,10 @@ Server re-validates the geofence distance + IST window before writing anything.
 Check-out stores work_minutes (total duty duration). On Duty stays locked for the day after that.
 ```
 
-Check-in window: the admin picks one **check-in time**; the window closes automatically
-**30 minutes** later (16:00 → last check-in 16:30). Arrivals more than **15 minutes** after the
-check-in time are flagged `late`.
+Check-in window: the admin sets one **check-in time per staff→kendra assignment** (Staff →
+Assign); the window closes automatically **30 minutes** later (16:00 → last check-in 16:30).
+Arrivals more than **15 minutes** after the check-in time are flagged `late`. Nodal officers have
+no window — each face-checked arrival inside an allowed kendra is stamped as a **visit**.
 
 Presence pulses are the anti-absenteeism trail: arriving-then-leaving, or never staying, shows up
 as absent pulses. Geofence math and windows are enforced server-side.
@@ -54,6 +56,23 @@ as absent pulses. Geofence math and windows are enforced server-side.
 - **Mock-location rejection** — the app refuses to use GPS fixes flagged as mock
   (`Location.isMock` / `isFromMockProvider`), so fake-GPS apps cannot pulse, check in or check out;
   the screen says why.
+
+### Shifts, employee codes & nodal officers (migration 7)
+
+- **Shift timing belongs to the person, not the place.** A kendra now stores only its location
+  (lat/long, radius) and `verify_interval_min`. The check-in time, +30 min closing and day-end live
+  on each **staff→kendra assignment**, so one kendra can host many staff on different shifts. Set
+  or change a shift from **Staff → Assign**: pick the kendra, set check-in time + day ends.
+- **Employee code** — every staff record carries a unique code (existing rows were backfilled
+  `EMP-0001`, `EMP-0002`, …). It is required at enrollment, shown in the app and in every report.
+- **Category** — `staff` = reports to exactly one kendra on their own shift (assigning a new kendra
+  replaces the old one); `nodal` = may visit several kendras with no fixed time.
+- **Nodal visits** — a nodal officer taps On Duty with a face check inside an allowed kendra; that
+  stamps a visit (arrival timestamp + location). Presence pulses keep it open (`last_pulse_at`);
+  there is **no Off Duty** for nodal. The dashboard's **Nodal visits** report lists officer, code,
+  kendra, arrival time, last seen and minutes on site, filterable by date/kendra/search.
+- The migration copies each kendra's old timings into its existing staff assignments, so current
+  shifts survive the upgrade unchanged.
 
 ### Face verification (proxy-attendance deterrent)
 
@@ -89,6 +108,10 @@ Run **all** migrations in the Supabase **SQL Editor** (New query → paste → R
    templates stay overwrite-protected.
 6. [`supabase/strict_monitor.sql`](supabase/strict_monitor.sql) — strict monitoring: day-quality
    flags in the attendance log, left-area auto check-out, and the check-out reason column.
+7. [`supabase/shifts_nodal.sql`](supabase/shifts_nodal.sql) — shift timing moves from kendra to each
+   staff→kendra assignment; unique employee codes; `staff`/`nodal` categories; `visits` table +
+   nodal visit recording; **Nodal visits** report RPC. Run this **before** installing the matching
+   APK — the app and dashboard call the new RPC signatures.
 
 All are re-runnable. Verification `SELECT`s at the bottom of each confirm success.
 
@@ -142,13 +165,18 @@ notice pointing them to the web dashboard.
 
 A no-build static site in [`dashboard/`](dashboard). Features:
 
-- **Overview** — present / absent / late / checked-out today, total staff & kendras.
-- **Attendance logs** — filter by date range, kendra, and name/mobile; shows check-in/out, total
-  work time, status, and per-day present/absent pulse counts.
-- **Staff** — enroll one at a time, and **Assign** allowed kendra(s) (fixed = one, multi = several).
-- **Kendras** — create with lat/long, radius, one check-in time (+30 min buffer automatic), day-end,
-  verify interval; **Edit** any kendra later (e.g. correct its lat/long). Staff phones pick up the
-  new location the next time they open the app.
+- **Overview** — present / absent / late / checked-out today, nodal visits today, total staff,
+  nodal officers & kendras.
+- **Attendance logs** — filter by date range, kendra, and name/code/mobile; shows check-in/out,
+  total work time, status, and per-day present/absent pulse counts.
+- **Nodal visits** — every nodal arrival: officer, employee code, kendra, arrival timestamp, last
+  seen (last pulse) and minutes on site, with a total-time footer.
+- **Staff** — enroll with name, **employee code**, mobile and **category** (staff / nodal);
+  **Assign** opens the kendra list — for staff it is a radio list where the chosen kendra gets a
+  shift (check-in time + day ends); for nodal it is a tick list with no timing.
+- **Kendras** — create with lat/long, radius and verify interval (no timing any more); **Edit** any
+  kendra later (e.g. correct its lat/long). Staff phones pick up the new location the next time
+  they open the app.
 - **Bulk upload** — upload an `.xlsx`, preview, and enroll many staff at once with per-row results.
   A **Download template** button generates the sheet.
 
@@ -156,10 +184,13 @@ A no-build static site in [`dashboard/`](dashboard). Features:
 | Column | Values |
 |---|---|
 | Full name | text |
+| Employee code | unique, e.g. `EMP-0007` |
 | Mobile number | 10-digit |
 | Role | `staff` or `admin` |
-| Duty type | `fixed` or `multi` |
-| Kendra name(s) | existing kendra name; comma-separated for `multi` |
+| Category | `staff` or `nodal` |
+| Kendra name(s) | existing kendra name; comma-separated for `nodal` |
+| Check-in time | optional, `HH:MM` — staff only |
+| Day ends | optional, `HH:MM` — staff only |
 
 Kendras are matched **by name** and must already exist. Rows with an unknown kendra or a duplicate
 mobile are reported as failures; the rest still import.
@@ -168,6 +199,9 @@ mobile are reported as failures; the rest still import.
 Fill your URL + anon key into `dashboard/config.js` (replacing the `__SUPABASE_URL__` /
 `__SUPABASE_ANON_KEY__` placeholders), then open `dashboard/index.html` in a browser (a simple
 static server works best, e.g. `python -m http.server` in the `dashboard/` folder).
+
+To look at the design **without any Supabase project**, open `index.html?preview=1` — the dashboard
+runs on sample data and saves nothing (a purple banner says so).
 
 ---
 
@@ -201,6 +235,7 @@ supabase/kendra_edit.sql         # admin_update_kendra() — edit lat/long & win
 supabase/duty_flow.sql           # work_minutes, face template, 30-min buffer, late rule
 supabase/face_template_v2.sql    # one-time v1 -> v2 face template upgrade
 supabase/strict_monitor.sql      # day-quality flags, left-area auto check-out, check-out reason
+supabase/shifts_nodal.sql        # shift per assignment, employee code, nodal category + visits
 dashboard/                       # no-build web admin (index.html, app.js, config.js, styles.css)
 app/src/main/java/com/vsk/attendance/
   MainActivity.kt                # entry, permission gate, staff-only routing
@@ -214,19 +249,27 @@ app/src/main/java/com/vsk/attendance/
 
 ---
 
-## Per-kendra settings
+## Kendra & shift settings
+Kendra = a place only:
+
 | Setting | Default | Meaning |
 |---|---|---|
 | `radius_m` | 100 | Geofence radius (metres) |
+| `verify_interval_min` | 30 | Presence re-verification interval |
+
+Shift timing is per **staff→kendra assignment** (set from Staff → Assign):
+
+| Setting | Default | Meaning |
+|---|---|---|
 | `check_in_start` | 08:00 | IST check-in time; window closes automatically at +30 min |
 | `check_in_end` | (auto) | Stored as `check_in_start + 30 min`; not editable |
 | `day_end` | 18:00 | IST auto check-out deadline |
-| `verify_interval_min` | 30 | Presence re-verification interval |
 
-Arrivals more than 15 minutes after `check_in_start` are stored as `late`.
+Arrivals more than 15 minutes after `check_in_start` are stored as `late`. Nodal assignments carry
+no timing at all.
 
-Staff `duty_type`: **fixed** = exactly one kendra (assigning replaces it); **multi** = several
-allowed kendras.
+Staff category: **staff** = exactly one kendra on their own shift (assigning replaces it);
+**nodal** = several allowed kendras, each face-checked arrival stamped as a visit.
 
 ---
 

@@ -8,6 +8,7 @@ import com.vsk.attendance.data.Kendra
 import com.vsk.attendance.data.SessionStore
 import com.vsk.attendance.data.Staff
 import com.vsk.attendance.data.SupabaseApi
+import com.vsk.attendance.data.Visit
 import com.vsk.attendance.location.AttendanceAction
 import com.vsk.attendance.location.AttendanceRules
 import com.vsk.attendance.location.LocationHelper
@@ -32,6 +33,8 @@ data class AttendanceUi(
     val lastPulseAt: String? = null,
     val workMinutes: Int? = null,
     val checkOutReason: String? = null,
+    val nodal: Boolean = false,             // nodal officers stamp visits, not shifts
+    val visits: List<Visit> = emptyList(),
     val message: String = "Waiting for location…",
     val clock: String = "",
     val running: Boolean = false
@@ -134,6 +137,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 val r = api.checkIn(s.id, lat, lon)
+
+                // Nodal: On Duty stamps an arrival at this kendra, nothing else.
+                if (s.isNodal) {
+                    if (r.ok) {
+                        activeKendraId = r.kendraId ?: activeKendraId
+                        lastPulseMillis = System.currentTimeMillis()
+                        val visits = runCatching { api.today(s.id).visits }
+                            .getOrDefault(_attendance.value.visits)
+                        _attendance.value = _attendance.value.copy(
+                            visits = visits,
+                            message = r.message ?: "Visit recorded."
+                        )
+                    } else {
+                        _attendance.value = _attendance.value.copy(
+                            message = r.error ?: "Could not record the visit."
+                        )
+                    }
+                    return@launch
+                }
+
                 if (r.status == "checked_in" || r.status == "already") {
                     activeKendraId = r.kendraId ?: activeKendraId
                     lastPulseMillis = System.currentTimeMillis()
@@ -154,6 +177,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun offDuty() {
         val s = _staff.value ?: return
+        if (s.isNodal) {
+            _attendance.value = _attendance.value.copy(
+                message = "Nodal officers record visits only — there is no off-duty to mark."
+            )
+            return
+        }
         if (lastFixMock) { _attendance.value = _attendance.value.copy(message = MOCK_MSG); return }
         val lat = lastLat
         val lon = lastLon
@@ -221,6 +250,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val allowed = _kendras.value
             if (allowed.isEmpty()) {
                 _attendance.value = AttendanceUi(
+                    nodal = s.isNodal,
                     message = "No duty kendra assigned. Ask your admin to assign you a kendra.",
                     clock = GeoUtils.nowClockIST()
                 )
@@ -240,6 +270,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     lastPulseAt = t.lastPulseAt,
                     workMinutes = t.record?.workMinutes,
                     checkOutReason = t.record?.checkOutReason,
+                    nodal = s.isNodal,
+                    visits = t.visits,
                     running = true,
                     clock = GeoUtils.nowClockIST()
                 )
@@ -284,10 +316,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
         val checkedIn = cur.checkInAt != null
         val checkedOut = cur.checkOutAt != null
+        val nodal = cur.nodal
         val activeKendra = activeKendraId?.let { id -> allowed.firstOrNull { it.id == id } } ?: near?.kendra
         val action = AttendanceRules.decide(
             allowed, lat, lon, checkedIn, checkedOut, activeKendra,
-            GeoUtils.nowMinutesIST(), System.currentTimeMillis() - lastPulseMillis
+            GeoUtils.nowMinutesIST(), System.currentTimeMillis() - lastPulseMillis, nodal
         )
 
         when (action) {
@@ -308,6 +341,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                                          else _attendance.value.checkOutReason,
                         message = when {
                             auto -> r.message ?: "Duty auto-closed: outside the duty area too long."
+                            nodal -> r.message ?: if (r.inside == true)
+                                "Presence verified at ${r.kendraName ?: "kendra"} (${r.at})."
+                            else "Outside duty area (${r.at})."
                             r.inside == true -> "Presence verified at ${r.kendraName ?: "duty kendra"} (${r.at})."
                             else -> "Absent at last verification (${r.at}) — outside duty area. " +
                                     "Duty auto-closes after 30 minutes outside."
@@ -333,11 +369,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             AttendanceAction.NONE -> {
+                val visitOpenHere = nodal && near?.inside == true &&
+                    _attendance.value.visits.any { it.kendra == near.kendra.name }
                 val msg = when {
+                    nodal && near?.inside != true ->
+                        "Outside duty area — ${"%.0f".format(near?.distM ?: 0.0)} m from nearest kendra."
+                    nodal && visitOpenHere -> "Visit open here — presence being verified."
+                    nodal -> "Inside ${near?.kendra?.name} — tap On Duty to record your visit."
                     checkedOut -> "Duty complete for today."
                     checkedIn -> if (near?.inside == true) "On duty — presence being verified."
                                  else "On duty — currently outside the kendra area."
-                    near?.inside == true -> "Inside duty area, outside check-in window."
+                    near?.inside == true -> "Inside duty area, outside your shift check-in time."
                     else -> "Outside duty area — ${"%.0f".format(near?.distM ?: 0.0)} m from nearest kendra."
                 }
                 _attendance.value = _attendance.value.copy(message = msg)

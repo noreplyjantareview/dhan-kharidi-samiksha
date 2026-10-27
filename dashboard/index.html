@@ -7,39 +7,43 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css" />
   <script src="config.js"></script>
 </head>
-<body class="bg-slate-100 text-slate-800">
+<body class="bg-[#f5f6fa] text-slate-800">
   <div id="toasts"></div>
   <div id="veil"><div class="spinner spinner-dark" style="width:28px;height:28px;border-width:3px"></div></div>
+  <div id="previewBanner" class="hidden">PREVIEW MODE — sample data only, nothing is read or saved</div>
 
   <!-- ============ LOGIN ============ -->
-  <section id="loginView" class="hidden min-h-screen items-center justify-center p-6">
-    <div class="w-full max-w-sm bg-white rounded-2xl shadow-xl p-8">
+  <section id="loginView" class="hidden min-h-screen items-center justify-center p-6 login-bg">
+    <div class="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-8 border border-slate-100">
       <div class="flex items-center gap-3 mb-6">
-        <div class="w-10 h-10 rounded-xl bg-blue-700 text-white flex items-center justify-center">
+        <div class="w-11 h-11 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-600/25">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21s7-6.3 7-11a7 7 0 10-14 0c0 4.7 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
         </div>
         <div>
-          <h1 class="text-lg font-bold leading-tight">Dhan Kharidi Samiksha</h1>
+          <h1 class="text-lg font-extrabold leading-tight tracking-tight">Dhan Kharidi Samiksha</h1>
           <p class="text-xs text-slate-500">Admin dashboard</p>
         </div>
       </div>
       <div id="loginConfigWarn" class="hidden mb-4 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-3"></div>
       <form id="loginForm" class="space-y-4">
         <div>
-          <label class="text-sm font-medium text-slate-600">Email</label>
+          <label class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Email</label>
           <input id="loginEmail" type="email" required autocomplete="username"
-            class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+            class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600" />
         </div>
         <div>
-          <label class="text-sm font-medium text-slate-600">Password</label>
+          <label class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Password</label>
           <input id="loginPassword" type="password" required autocomplete="current-password"
-            class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" />
+            class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600" />
         </div>
         <button id="loginBtn" type="submit"
-          class="w-full bg-blue-700 hover:bg-blue-800 text-white font-semibold rounded-lg py-2.5 text-sm flex items-center justify-center gap-2">
+          class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg py-2.5 text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 transition">
           <span class="label">Sign in</span>
         </button>
       </form>
@@ -49,36 +53,39 @@
   <!-- ============ APP ============ -->
   <div id="appView" class="hidden min-h-screen flex-col md:flex-row">
     <!-- Sidebar -->
-    <aside class="w-full md:w-64 shrink-0 bg-white border-b md:border-b-0 md:border-r border-slate-200 flex flex-col">
-      <div class="h-16 flex items-center gap-2 px-5 border-b border-slate-200">
-        <div class="w-8 h-8 rounded-lg bg-blue-700 text-white flex items-center justify-center">
+    <aside class="w-full md:w-64 shrink-0 sidebar flex flex-col">
+      <div class="h-16 flex items-center gap-2.5 px-5 border-b border-white/10">
+        <div class="w-9 h-9 rounded-lg bg-blue-500 text-white flex items-center justify-center shadow-lg shadow-blue-900/40">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21s7-6.3 7-11a7 7 0 10-14 0c0 4.7 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
         </div>
         <div class="leading-tight">
-          <div class="font-bold text-sm">Dhan Kharidi</div>
-          <div class="text-[11px] text-slate-500">Samiksha Admin</div>
+          <div class="font-bold text-sm text-white">Dhan Kharidi</div>
+          <div class="text-[11px] text-slate-400">Samiksha Admin</div>
         </div>
       </div>
       <nav class="p-3 space-y-1 text-sm" id="nav">
-        <a data-view="overview" class="nav-link active flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+        <a data-view="overview" class="nav-link active">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
           Overview</a>
-        <a data-view="logs" class="nav-link flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+        <a data-view="logs" class="nav-link">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
           Attendance logs</a>
-        <a data-view="staff" class="nav-link flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6-4a3 3 0 11-3-3"/></svg>
+        <a data-view="nodal" class="nav-link">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4M9 7l6-3"/></svg>
+          Nodal visits</a>
+        <a data-view="staff" class="nav-link">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6-4a3 3 0 11-3-3"/></svg>
           Staff</a>
-        <a data-view="kendra" class="nav-link flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21s7-6.3 7-11a7 7 0 10-14 0c0 4.7 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+        <a data-view="kendra" class="nav-link">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21s7-6.3 7-11a7 7 0 10-14 0c0 4.7 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
           Kendras</a>
-        <a data-view="bulk" class="nav-link flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16V4m0 0l-4 4m4-4l4 4M4 20h16"/></svg>
+        <a data-view="bulk" class="nav-link">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16V4m0 0l-4 4m4-4l4 4M4 20h16"/></svg>
           Bulk upload</a>
       </nav>
-      <div class="mt-auto p-3 border-t border-slate-200">
-        <div class="text-xs text-slate-500 px-2 mb-2" id="adminEmail"></div>
-        <button id="logoutBtn" class="w-full flex items-center justify-center gap-2 text-sm text-slate-600 hover:text-red-600 px-3 py-2 rounded-lg hover:bg-slate-100">
+      <div class="mt-auto p-3 border-t border-white/10">
+        <div class="text-xs text-slate-400 px-2 mb-2 truncate" id="adminEmail"></div>
+        <button id="logoutBtn" class="w-full flex items-center justify-center gap-2 text-sm text-slate-300 hover:text-white px-3 py-2 rounded-lg hover:bg-white/10 transition">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
           Sign out</button>
       </div>
@@ -86,93 +93,116 @@
 
     <!-- Main -->
     <main class="flex-1 min-w-0">
-      <header class="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-6">
-        <h2 id="viewTitle" class="text-lg font-semibold">Overview</h2>
+      <header class="h-16 bg-white/90 backdrop-blur border-b border-slate-200 flex items-center justify-between px-4 md:px-6 sticky top-0 z-30">
+        <h2 id="viewTitle" class="text-lg font-bold tracking-tight">Overview</h2>
         <div class="text-sm text-slate-500" id="todayLabel"></div>
       </header>
       <div class="p-4 md:p-6">
 
         <!-- Overview -->
         <section data-panel="overview" class="space-y-6">
-          <div id="statCards" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4"></div>
-          <div class="bg-white rounded-xl border border-slate-200 p-5">
-            <h3 class="font-semibold mb-1">How to read this</h3>
-            <p class="text-sm text-slate-600">Present = checked in inside their kendra geofence. Absent = eligible staff with no check-in today. Presence pulses re-verify staff stay on duty; the logs tab shows present/absent pulse counts per person per day.</p>
+          <div id="statCards" class="grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="card p-5">
+              <h3 class="font-bold mb-2 flex items-center gap-2">
+                <span class="dot bg-blue-600"></span>How to read this</h3>
+              <p class="text-sm text-slate-600 leading-relaxed">Present = checked in inside their kendra geofence during their own shift. Absent = staff with no check-in today. Presence pulses re-verify that staff stay on duty; the logs tab shows pulse counts and day-quality flags per person per day.</p>
+            </div>
+            <div class="card p-5">
+              <h3 class="font-bold mb-2 flex items-center gap-2">
+                <span class="dot bg-amber-500"></span>Staff vs nodal</h3>
+              <p class="text-sm text-slate-600 leading-relaxed"><b>Staff</b> report to one kendra on a shift you set when you assign it — check-in opens for 30 minutes, arrivals over 15 minutes late are flagged. <b>Nodal officers</b> may visit several kendras with no fixed time: each face-checked arrival is stamped in the <b>Nodal visits</b> report and closed by the last pulse seen there.</p>
+            </div>
           </div>
         </section>
 
         <!-- Logs -->
         <section data-panel="logs" class="hidden space-y-4">
-          <div class="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap gap-3 items-end">
-            <div><label class="block text-xs text-slate-500">From</label><input id="logFrom" type="date" class="mt-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-            <div><label class="block text-xs text-slate-500">To</label><input id="logTo" type="date" class="mt-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-            <div><label class="block text-xs text-slate-500">Kendra</label><select id="logKendra" class="mt-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"><option value="">All</option></select></div>
-            <div class="flex-1 min-w-[180px]"><label class="block text-xs text-slate-500">Search name / mobile</label><input id="logSearch" type="text" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-            <button id="logApply" class="bg-blue-700 hover:bg-blue-800 text-white text-sm font-semibold rounded-lg px-4 py-2">Apply</button>
+          <div class="card p-4 flex flex-wrap gap-3 items-end">
+            <div><label class="lbl">From</label><input id="logFrom" type="date" class="inp mt-1"/></div>
+            <div><label class="lbl">To</label><input id="logTo" type="date" class="inp mt-1"/></div>
+            <div><label class="lbl">Kendra</label><select id="logKendra" class="inp mt-1"><option value="">All</option></select></div>
+            <div class="flex-1 min-w-[180px]"><label class="lbl">Search name / code / mobile</label><input id="logSearch" type="text" class="inp mt-1 w-full"/></div>
+            <button id="logApply" class="btn-primary">Apply</button>
           </div>
-          <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div class="card overflow-hidden">
             <div class="max-h-[65vh] overflow-auto"><table class="grid" id="logsTable"></table></div>
           </div>
         </section>
 
+        <!-- Nodal visits -->
+        <section data-panel="nodal" class="hidden space-y-4">
+          <div class="card p-4 flex flex-wrap gap-3 items-end">
+            <div><label class="lbl">From</label><input id="nvFrom" type="date" class="inp mt-1"/></div>
+            <div><label class="lbl">To</label><input id="nvTo" type="date" class="inp mt-1"/></div>
+            <div><label class="lbl">Kendra</label><select id="nvKendra" class="inp mt-1"><option value="">All</option></select></div>
+            <div class="flex-1 min-w-[180px]"><label class="lbl">Search name / code / mobile</label><input id="nvSearch" type="text" class="inp mt-1 w-full"/></div>
+            <button id="nvApply" class="btn-primary">Apply</button>
+          </div>
+          <div class="card overflow-hidden">
+            <div class="max-h-[65vh] overflow-auto"><table class="grid" id="nodalTable"></table></div>
+          </div>
+          <p class="text-xs text-slate-500">A nodal visit opens when the officer marks On Duty with a face check inside the kendra geofence, and closes at the last presence pulse seen there. <b>Time on site</b> is arrival → last pulse.</p>
+        </section>
+
         <!-- Staff -->
         <section data-panel="staff" class="hidden space-y-4">
-          <div class="bg-white rounded-xl border border-slate-200 p-4">
-            <h3 class="font-semibold mb-3">Enroll staff</h3>
+          <div class="card p-5">
+            <h3 class="font-bold mb-1">Enroll staff</h3>
+            <p class="text-xs text-slate-500 mb-3">Employee code is required and must be unique. Shift timing is set later, per person, from <b>Assign</b>.</p>
             <form id="enrollForm" class="flex flex-wrap gap-3 items-end">
-              <div class="flex-1 min-w-[160px]"><label class="block text-xs text-slate-500">Full name</label><input id="enName" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-              <div class="min-w-[140px]"><label class="block text-xs text-slate-500">Mobile</label><input id="enMobile" required inputmode="numeric" maxlength="10" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-              <div><label class="block text-xs text-slate-500">Duty type</label><select id="enDuty" class="mt-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"><option value="fixed">Fixed (one kendra)</option><option value="multi">Multi (several)</option></select></div>
-              <button class="bg-blue-700 hover:bg-blue-800 text-white text-sm font-semibold rounded-lg px-4 py-2">Add staff</button>
+              <div class="flex-1 min-w-[170px]"><label class="lbl">Full name</label><input id="enName" required class="inp mt-1 w-full"/></div>
+              <div class="min-w-[130px]"><label class="lbl">Employee code</label><input id="enCode" required class="inp mt-1 w-full" placeholder="EMP-0001"/></div>
+              <div class="min-w-[140px]"><label class="lbl">Mobile</label><input id="enMobile" required inputmode="numeric" maxlength="10" class="inp mt-1 w-full"/></div>
+              <div><label class="lbl">Category</label><select id="enCategory" class="inp mt-1"><option value="staff">Staff (one kendra + shift)</option><option value="nodal">Nodal (visits many)</option></select></div>
+              <button class="btn-primary">Add staff</button>
             </form>
           </div>
-          <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div class="card overflow-hidden">
             <div class="max-h-[60vh] overflow-auto"><table class="grid" id="staffTable"></table></div>
           </div>
         </section>
 
         <!-- Kendra -->
         <section data-panel="kendra" class="hidden space-y-4">
-          <div class="bg-white rounded-xl border border-slate-200 p-4">
-            <h3 class="font-semibold mb-3">Add kendra</h3>
-            <form id="kendraForm" class="grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
-              <div class="col-span-2"><label class="block text-xs text-slate-500">Name</label><input id="kName" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-              <div><label class="block text-xs text-slate-500">Latitude</label><input id="kLat" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-              <div><label class="block text-xs text-slate-500">Longitude</label><input id="kLon" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-              <div><label class="block text-xs text-slate-500">Radius (m)</label><input id="kRadius" value="100" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-              <div><label class="block text-xs text-slate-500">Check-in time</label><input id="kInStart" value="08:00" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-              <div><label class="block text-xs text-slate-500">Day ends</label><input id="kDayEnd" value="18:00" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-              <div><label class="block text-xs text-slate-500">Verify every (min)</label><input id="kVerify" value="30" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-              <p class="col-span-2 md:col-span-4 text-xs text-slate-500">Check-in closes automatically 30 minutes after the check-in time (e.g. 16:00 → last check-in 16:30). Arrivals more than 15 minutes late are flagged <b>late</b>.</p>
-              <div class="col-span-2 md:col-span-4"><button class="bg-blue-700 hover:bg-blue-800 text-white text-sm font-semibold rounded-lg px-4 py-2">Create kendra</button></div>
+          <div class="card p-5">
+            <h3 class="font-bold mb-1">Add kendra</h3>
+            <p class="text-xs text-slate-500 mb-3">A kendra is only a place: location, geofence radius and how often presence is re-verified. Shift timing belongs to each staff member and is set from <b>Staff → Assign</b>.</p>
+            <form id="kendraForm" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 items-end">
+              <div class="col-span-2"><label class="lbl">Name</label><input id="kName" required class="inp mt-1 w-full"/></div>
+              <div><label class="lbl">Latitude</label><input id="kLat" required step="any" class="inp mt-1 w-full"/></div>
+              <div><label class="lbl">Longitude</label><input id="kLon" required step="any" class="inp mt-1 w-full"/></div>
+              <div><label class="lbl">Radius (m)</label><input id="kRadius" value="100" class="inp mt-1 w-full"/></div>
+              <div><label class="lbl">Verify every (min)</label><input id="kVerify" value="30" class="inp mt-1 w-full"/></div>
+              <div class="col-span-2 md:col-span-3 lg:col-span-5"><button class="btn-primary">Create kendra</button></div>
             </form>
           </div>
-          <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div class="card overflow-hidden">
             <div class="max-h-[55vh] overflow-auto"><table class="grid" id="kendraTable"></table></div>
           </div>
         </section>
 
         <!-- Bulk -->
         <section data-panel="bulk" class="hidden space-y-4">
-          <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+          <div class="card p-5 space-y-4">
             <div class="flex items-center justify-between flex-wrap gap-3">
               <div>
-                <h3 class="font-semibold">Bulk enroll from Excel</h3>
-                <p class="text-sm text-slate-500">Columns: <b>Full name</b>, <b>Mobile number</b>, <b>Role</b> (staff/admin), <b>Duty type</b> (fixed/multi), <b>Kendra name(s)</b> (comma-separated for multi). Kendras must already exist.</p>
+                <h3 class="font-bold">Bulk enroll from Excel</h3>
+                <p class="text-sm text-slate-500 mt-1">Columns: <b>Full name</b>, <b>Employee code</b>, <b>Mobile number</b>, <b>Role</b> (staff/admin), <b>Category</b> (staff/nodal), <b>Kendra name(s)</b> (comma-separated for nodal), <b>Check-in time</b> and <b>Day ends</b> (optional, for staff). Kendras must already exist.</p>
               </div>
-              <button id="tplBtn" class="text-sm border border-slate-300 rounded-lg px-3 py-2 hover:bg-slate-50">Download template (.xlsx)</button>
+              <button id="tplBtn" class="btn-ghost">Download template (.xlsx)</button>
             </div>
             <input id="xlsxFile" type="file" accept=".xlsx,.xls,.csv" class="block w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-700 file:font-semibold hover:file:bg-blue-100"/>
           </div>
-          <div id="bulkPreviewWrap" class="hidden bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div id="bulkPreviewWrap" class="hidden card overflow-hidden">
             <div class="p-4 flex items-center justify-between border-b border-slate-200">
-              <h3 class="font-semibold">Preview (<span id="bulkCount">0</span> rows)</h3>
-              <button id="bulkSubmit" class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg px-4 py-2">Upload & enroll</button>
+              <h3 class="font-bold">Preview (<span id="bulkCount">0</span> rows)</h3>
+              <button id="bulkSubmit" class="btn-success">Upload &amp; enroll</button>
             </div>
             <div class="max-h-[40vh] overflow-auto"><table class="grid" id="bulkPreview"></table></div>
           </div>
-          <div id="bulkResultWrap" class="hidden bg-white rounded-xl border border-slate-200 overflow-hidden">
-            <div class="p-4 border-b border-slate-200"><h3 class="font-semibold">Result</h3></div>
+          <div id="bulkResultWrap" class="hidden card overflow-hidden">
+            <div class="p-4 border-b border-slate-200"><h3 class="font-bold">Result</h3></div>
             <div class="max-h-[40vh] overflow-auto"><table class="grid" id="bulkResult"></table></div>
           </div>
         </section>
@@ -181,37 +211,38 @@
     </main>
   </div>
 
-  <!-- Assign kendra modal -->
-  <div id="assignModal" class="hidden fixed inset-0 bg-black/40 z-40 items-center justify-center p-4">
-    <div class="bg-white rounded-2xl shadow-xl w-full max-w-md">
-      <div class="p-5 border-b border-slate-200 flex items-center justify-between">
-        <h3 class="font-semibold">Assign kendra(s) — <span id="assignName"></span></h3>
-        <button id="assignClose" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
+  <!-- Assign kendra + shift modal -->
+  <div id="assignModal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40 items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+      <div class="p-5 border-b border-slate-200 flex items-start justify-between gap-3">
+        <div>
+          <h3 class="font-bold">Assign kendra &amp; shift</h3>
+          <p class="text-sm text-slate-500 mt-0.5"><span id="assignName"></span> · <span id="assignCategory"></span></p>
+        </div>
+        <button id="assignClose" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
       </div>
-      <div class="p-5 space-y-2 max-h-[50vh] overflow-auto" id="assignList"></div>
-      <div class="p-4 border-t border-slate-200 text-xs text-slate-500" id="assignHint"></div>
+      <div class="p-4 space-y-2 max-h-[58vh] overflow-auto" id="assignList"></div>
+      <div class="p-4 border-t border-slate-200 text-xs text-slate-500 bg-slate-50" id="assignHint"></div>
     </div>
   </div>
 
   <!-- Edit kendra modal -->
-  <div id="kendraEditModal" class="hidden fixed inset-0 bg-black/40 z-40 items-center justify-center p-4">
-    <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg">
+  <div id="kendraEditModal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40 items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
       <div class="p-5 border-b border-slate-200 flex items-center justify-between">
-        <h3 class="font-semibold">Edit kendra</h3>
-        <button id="kendraEditClose" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
+        <h3 class="font-bold">Edit kendra</h3>
+        <button id="kendraEditClose" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
       </div>
       <form id="kendraEditForm" class="p-5 grid grid-cols-2 gap-3">
-        <div class="col-span-2"><label class="block text-xs text-slate-500">Name</label><input id="keName" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-        <div><label class="block text-xs text-slate-500">Latitude</label><input id="keLat" required step="any" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-        <div><label class="block text-xs text-slate-500">Longitude</label><input id="keLon" required step="any" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-        <div><label class="block text-xs text-slate-500">Radius (m)</label><input id="keRadius" required inputmode="numeric" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-        <div><label class="block text-xs text-slate-500">Verify every (min)</label><input id="keVerify" required inputmode="numeric" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-        <div><label class="block text-xs text-slate-500">Check-in time</label><input id="keInStart" type="time" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-        <div><label class="block text-xs text-slate-500">Day ends</label><input id="keDayEnd" type="time" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-        <p class="col-span-2 text-xs text-slate-500">Check-in closes automatically 30 minutes after the check-in time.</p>
+        <div class="col-span-2"><label class="lbl">Name</label><input id="keName" required class="inp mt-1 w-full"/></div>
+        <div><label class="lbl">Latitude</label><input id="keLat" required step="any" class="inp mt-1 w-full"/></div>
+        <div><label class="lbl">Longitude</label><input id="keLon" required step="any" class="inp mt-1 w-full"/></div>
+        <div><label class="lbl">Radius (m)</label><input id="keRadius" required inputmode="numeric" class="inp mt-1 w-full"/></div>
+        <div><label class="lbl">Verify every (min)</label><input id="keVerify" required inputmode="numeric" class="inp mt-1 w-full"/></div>
+        <p class="col-span-2 text-xs text-slate-500">Shift timing lives on each staff assignment — change it from <b>Staff → Assign</b>.</p>
         <div class="col-span-2 flex justify-end gap-2 pt-2">
-          <button type="button" id="kendraEditCancel" class="text-sm border border-slate-300 rounded-lg px-4 py-2 hover:bg-slate-50">Cancel</button>
-          <button id="kendraEditSave" class="bg-blue-700 hover:bg-blue-800 text-white text-sm font-semibold rounded-lg px-4 py-2">Save changes</button>
+          <button type="button" id="kendraEditCancel" class="btn-ghost">Cancel</button>
+          <button id="kendraEditSave" class="btn-primary">Save changes</button>
         </div>
       </form>
     </div>

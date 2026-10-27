@@ -30,6 +30,7 @@ object AttendanceRules {
      * @param activeKendra the kendra the user checked into (drives day_end + pulse interval).
      * @param nowMinutesIST current IST minutes since midnight.
      * @param millisSinceLastPulse how long ago the last presence pulse was sent.
+     * @param nodal nodal officers have no shift and no off-duty — pulses only.
      */
     fun decide(
         kendras: List<Kendra>,
@@ -39,17 +40,22 @@ object AttendanceRules {
         checkedOut: Boolean,
         activeKendra: Kendra?,
         nowMinutesIST: Int,
-        millisSinceLastPulse: Long
+        millisSinceLastPulse: Long,
+        nodal: Boolean = false
     ): AttendanceAction {
         val near = nearest(kendras, lat, lon) ?: return AttendanceAction.NONE
+        val k = activeKendra ?: near.kendra
+        val intervalMs = k.verifyIntervalMin.coerceAtLeast(1) * 60_000L
+
+        // A nodal visit stays open through its pulses, so pulse all day.
+        if (nodal) return if (millisSinceLastPulse >= intervalMs) AttendanceAction.PULSE
+                       else AttendanceAction.NONE
 
         if (!checkedIn || checkedOut) return AttendanceAction.NONE
 
-        val k = activeKendra ?: near.kendra
-        val dayEnd = GeoUtils.hhmmToMinutes(k.dayEnd)
+        val dayEnd = k.dayEnd?.let { GeoUtils.hhmmToMinutes(it) } ?: -1
         if (dayEnd >= 0 && nowMinutesIST >= dayEnd) return AttendanceAction.CHECK_OUT
 
-        val intervalMs = k.verifyIntervalMin.coerceAtLeast(1) * 60_000L
         if (millisSinceLastPulse >= intervalMs) return AttendanceAction.PULSE
 
         return AttendanceAction.NONE
