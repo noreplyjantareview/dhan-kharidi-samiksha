@@ -26,10 +26,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.LifecycleOwner
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.face.Face
 import com.google.mlkit.vision.face.FaceDetection
@@ -50,8 +50,10 @@ fun FaceCaptureCard(
     buttonColor: Color = Color(0xFF1D4ED8)
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val previewView = remember { PreviewView(context) }
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
+    var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
     val detector = remember {
         FaceDetection.getClient(
             FaceDetectorOptions.Builder()
@@ -69,6 +71,7 @@ fun FaceCaptureCard(
         providerFuture.addListener({
             try {
                 val provider = providerFuture.get()
+                cameraProvider = provider
                 val preview = Preview.Builder().build().also {
                     it.setSurfaceProvider(previewView.surfaceProvider)
                 }
@@ -78,7 +81,7 @@ fun FaceCaptureCard(
                 imageCapture = capture
                 provider.unbindAll()
                 provider.bindToLifecycle(
-                    context as LifecycleOwner,
+                    lifecycleOwner,
                     CameraSelector.DEFAULT_FRONT_CAMERA,
                     preview,
                     capture
@@ -91,6 +94,7 @@ fun FaceCaptureCard(
 
     DisposableEffect(Unit) {
         onDispose {
+            cameraProvider?.unbindAll()
             detector.close()
             executor.shutdownNow()
         }

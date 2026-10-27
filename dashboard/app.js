@@ -50,6 +50,7 @@
   // ---------- auth ----------
   function showLogin() {
     $("#appView").classList.add("hidden");
+    $("#appView").classList.remove("md:flex");
     $("#loginView").classList.remove("hidden");
     $("#loginView").classList.add("flex");
   }
@@ -57,6 +58,7 @@
     $("#loginView").classList.add("hidden");
     $("#loginView").classList.remove("flex");
     $("#appView").classList.remove("hidden");
+    $("#appView").classList.add("md:flex");
     $("#adminEmail").textContent = session.user.email;
     $("#todayLabel").textContent = new Date().toDateString();
     await switchView("overview");

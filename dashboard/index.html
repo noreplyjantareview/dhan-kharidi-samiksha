@@ -104,10 +104,10 @@
         <!-- Logs -->
         <section data-panel="logs" class="hidden space-y-4">
           <div class="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap gap-3 items-end">
-            <div><label class="text-xs text-slate-500">From</label><input id="logFrom" type="date" class="mt-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-            <div><label class="text-xs text-slate-500">To</label><input id="logTo" type="date" class="mt-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-            <div><label class="text-xs text-slate-500">Kendra</label><select id="logKendra" class="mt-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"><option value="">All</option></select></div>
-            <div class="flex-1 min-w-[180px]"><label class="text-xs text-slate-500">Search name / mobile</label><input id="logSearch" type="text" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
+            <div><label class="block text-xs text-slate-500">From</label><input id="logFrom" type="date" class="mt-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
+            <div><label class="block text-xs text-slate-500">To</label><input id="logTo" type="date" class="mt-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
+            <div><label class="block text-xs text-slate-500">Kendra</label><select id="logKendra" class="mt-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"><option value="">All</option></select></div>
+            <div class="flex-1 min-w-[180px]"><label class="block text-xs text-slate-500">Search name / mobile</label><input id="logSearch" type="text" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
             <button id="logApply" class="bg-blue-700 hover:bg-blue-800 text-white text-sm font-semibold rounded-lg px-4 py-2">Apply</button>
           </div>
           <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -120,9 +120,9 @@
           <div class="bg-white rounded-xl border border-slate-200 p-4">
             <h3 class="font-semibold mb-3">Enroll staff</h3>
             <form id="enrollForm" class="flex flex-wrap gap-3 items-end">
-              <div class="flex-1 min-w-[160px]"><label class="text-xs text-slate-500">Full name</label><input id="enName" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-              <div class="min-w-[140px]"><label class="text-xs text-slate-500">Mobile</label><input id="enMobile" required inputmode="numeric" maxlength="10" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-              <div><label class="text-xs text-slate-500">Duty type</label><select id="enDuty" class="mt-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"><option value="fixed">Fixed (one kendra)</option><option value="multi">Multi (several)</option></select></div>
+              <div class="flex-1 min-w-[160px]"><label class="block text-xs text-slate-500">Full name</label><input id="enName" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
+              <div class="min-w-[140px]"><label class="block text-xs text-slate-500">Mobile</label><input id="enMobile" required inputmode="numeric" maxlength="10" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
+              <div><label class="block text-xs text-slate-500">Duty type</label><select id="enDuty" class="mt-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"><option value="fixed">Fixed (one kendra)</option><option value="multi">Multi (several)</option></select></div>
               <button class="bg-blue-700 hover:bg-blue-800 text-white text-sm font-semibold rounded-lg px-4 py-2">Add staff</button>
             </form>
           </div>
@@ -136,13 +136,13 @@
           <div class="bg-white rounded-xl border border-slate-200 p-4">
             <h3 class="font-semibold mb-3">Add kendra</h3>
             <form id="kendraForm" class="grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
-              <div class="col-span-2"><label class="text-xs text-slate-500">Name</label><input id="kName" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-              <div><label class="text-xs text-slate-500">Latitude</label><input id="kLat" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-              <div><label class="text-xs text-slate-500">Longitude</label><input id="kLon" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-              <div><label class="text-xs text-slate-500">Radius (m)</label><input id="kRadius" value="100" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-              <div><label class="text-xs text-slate-500">Check-in time</label><input id="kInStart" value="08:00" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-              <div><label class="text-xs text-slate-500">Day ends</label><input id="kDayEnd" value="18:00" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-              <div><label class="text-xs text-slate-500">Verify every (min)</label><input id="kVerify" value="30" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
+              <div class="col-span-2"><label class="block text-xs text-slate-500">Name</label><input id="kName" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
+              <div><label class="block text-xs text-slate-500">Latitude</label><input id="kLat" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
+              <div><label class="block text-xs text-slate-500">Longitude</label><input id="kLon" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
+              <div><label class="block text-xs text-slate-500">Radius (m)</label><input id="kRadius" value="100" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
+              <div><label class="block text-xs text-slate-500">Check-in time</label><input id="kInStart" value="08:00" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
+              <div><label class="block text-xs text-slate-500">Day ends</label><input id="kDayEnd" value="18:00" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
+              <div><label class="block text-xs text-slate-500">Verify every (min)</label><input id="kVerify" value="30" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
               <p class="col-span-2 md:col-span-4 text-xs text-slate-500">Check-in closes automatically 30 minutes after the check-in time (e.g. 16:00 → last check-in 16:30). Arrivals more than 15 minutes late are flagged <b>late</b>.</p>
               <div class="col-span-2 md:col-span-4"><button class="bg-blue-700 hover:bg-blue-800 text-white text-sm font-semibold rounded-lg px-4 py-2">Create kendra</button></div>
             </form>
@@ -201,13 +201,13 @@
         <button id="kendraEditClose" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
       </div>
       <form id="kendraEditForm" class="p-5 grid grid-cols-2 gap-3">
-        <div class="col-span-2"><label class="text-xs text-slate-500">Name</label><input id="keName" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-        <div><label class="text-xs text-slate-500">Latitude</label><input id="keLat" required step="any" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-        <div><label class="text-xs text-slate-500">Longitude</label><input id="keLon" required step="any" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-        <div><label class="text-xs text-slate-500">Radius (m)</label><input id="keRadius" required inputmode="numeric" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-        <div><label class="text-xs text-slate-500">Verify every (min)</label><input id="keVerify" required inputmode="numeric" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-        <div><label class="text-xs text-slate-500">Check-in time</label><input id="keInStart" type="time" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
-        <div><label class="text-xs text-slate-500">Day ends</label><input id="keDayEnd" type="time" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
+        <div class="col-span-2"><label class="block text-xs text-slate-500">Name</label><input id="keName" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
+        <div><label class="block text-xs text-slate-500">Latitude</label><input id="keLat" required step="any" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
+        <div><label class="block text-xs text-slate-500">Longitude</label><input id="keLon" required step="any" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
+        <div><label class="block text-xs text-slate-500">Radius (m)</label><input id="keRadius" required inputmode="numeric" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
+        <div><label class="block text-xs text-slate-500">Verify every (min)</label><input id="keVerify" required inputmode="numeric" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
+        <div><label class="block text-xs text-slate-500">Check-in time</label><input id="keInStart" type="time" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
+        <div><label class="block text-xs text-slate-500">Day ends</label><input id="keDayEnd" type="time" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/></div>
         <p class="col-span-2 text-xs text-slate-500">Check-in closes automatically 30 minutes after the check-in time.</p>
         <div class="col-span-2 flex justify-end gap-2 pt-2">
           <button type="button" id="kendraEditCancel" class="text-sm border border-slate-300 rounded-lg px-4 py-2 hover:bg-slate-50">Cancel</button>
