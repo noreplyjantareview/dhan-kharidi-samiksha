@@ -106,7 +106,7 @@ object FaceGeometry {
     private fun rawPoints(face: Face): List<PointF?> {
         val pts = ArrayList<PointF?>(LANDMARK_TYPES.size + CONTOUR_FRACTIONS.size)
         for (t in LANDMARK_TYPES) pts.add(face.getLandmark(t)?.position)
-        val contour = face.getContour(FaceContour.FACE_CONTOUR).points
+        val contour = face.getContour(FaceContour.FACE)?.points ?: emptyList()
         for (f in CONTOUR_FRACTIONS) {
             if (contour.isEmpty()) { pts.add(null); continue }
             val idx = (f * (contour.size - 1)).toInt().coerceIn(0, contour.size - 1)
