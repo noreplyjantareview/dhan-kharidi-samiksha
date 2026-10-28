@@ -250,11 +250,12 @@ private class FaceAnalyzer(
         val width = right - left
         val height = bottom - top
         if (width < 8 || height < 8) return null
-        // The bitmap API writes rows at the stride, never tighter than four pixels, so the reads and
-        // the buffer are both sized that way rather than assuming a row is exactly `width` long.
+        // The bitmap API is getPixels(pixels, offset, stride, x, y, width, height) and its row stride
+        // is never tighter than four pixels, so the buffer and the reads are both sized that way
+        // rather than assuming a row is exactly `width` long.
         val stride = maxOf(width, (width + 3) and 3.inv())
         if (pixels.size < height * stride) pixels = IntArray(height * stride)
-        frame.getPixels(pixels, stride, left, top, width, height)
+        frame.getPixels(pixels, 0, stride, left, top, width, height)
         return FaceFrameQuality.measure(pixels, width, height, stride)
     }
 
