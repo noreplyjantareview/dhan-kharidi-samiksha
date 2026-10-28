@@ -33,3 +33,12 @@ The conversion's model-card preprocessing/class-order claims are not used.
 
 These models are not Aadhaar FaceRD, certified liveness detectors, or evidence of
 measured deployment accuracy. Physical-phone and population/attack testing is required.
+
+FaceLandmarker (float16) / MediaPipe Tasks Vision (Apache-2.0; see LICENSE-MEDIAPIPE.txt)
+https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
+Shipped as face_landmarker.task, unchanged bytes.
+SHA-256: 64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff
+Used only for guidance and blink detection: 478 face landmarks (eye corners and eyelids)
+plus 52 expression scores. It produces no identity template and its output is never stored,
+sent to the server, or written to disk. Recognition and anti-spoofing stay with SFace and
+MiniFASNet above. MediaPipe's own privacy notice applies: https://goo.gle/mediapipe-privacy.

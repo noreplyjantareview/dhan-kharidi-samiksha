@@ -25,10 +25,10 @@ Staff types registered mobile (+ activation code on a new phone) → login_staff
         │  supervised enrollment: five trained face embeddings, no photos
         ▼
 App streams GPS (foreground) while open
-        ├─ On Duty → server challenge → live multi-frame face check → record_check_in_v3()
+        ├─ On Duty → server challenge → on-device blink + face check → record_check_in_v3()
         ├─ nodal On Duty at an allowed kendra → same face check → visit stamped
         ├─ every verify_interval_min while on duty / visit open → record_pulse_v3()
-        ├─ Off Duty → server challenge → live multi-frame face check → record_check_out_v3()
+        ├─ Off Duty → server challenge → on-device blink + face check → record_check_out_v3()
         └─ at/after assigned day_end → device-authorized automatic check-out
         ▼
 Server re-validates the geofence distance + IST window before writing anything.
@@ -80,11 +80,16 @@ as absent pulses. Geofence math and windows are enforced server-side.
   SFace aligns the face to 112×112 and produces a normalized 128-value embedding. Enrollment stores
   five quality-checked samples in a versioned `sface-2021dec` template. Old v1/v2 registrations
   require supervised re-enrollment; there is no fallback to the old matcher.
-- **Guided multi-frame capture:** checks face size, framing, head tilt, lighting and sharpness;
-  an on-device MiniFASNetV2 model screens for presentation attacks. Follow the randomized left/right
-  turn and return to the camera. Identity must remain consistent throughout, with three matching
-  final frames. Poor capture conditions give specific instructions instead of a similarity score.
-- **No face photos are saved or uploaded.** Frames and crops exist only in memory. Numeric templates
+- **Guided capture with a blink:** MediaPipe FaceLandmarker reads the 478-point mesh for framing and
+  eyelid state; OpenCV YuNet + SFace + MiniFASNetV2 do identity and liveness. The employee sees one
+  short line at a time in English and Hindi: look at the camera → blink → keep looking. Two centred
+  frames build the anchor, one blink proves a live person is driving the camera, three post-blink
+  frames finish the five-sample template. The randomized head turn is gone — field staff could not
+  read and follow it while holding a phone.
+- **Recognition only when it helps:** the heavy OpenCV pass runs only on frames whose eyes are open
+  and whose face is framed, so a check costs about five recognition runs instead of dozens.
+- **No face photos are saved or uploaded.** Frames and crops exist only in memory. The mesh model is
+  guidance only: it produces no identity and nothing from it is stored. Numeric templates
   are still sensitive biometric data: they are stored in the protected staff record and encrypted
   locally with AndroidKeyStore AES-GCM. Device credentials are encrypted too; app backups are disabled.
 - **Supervised activation:** Dashboard → Staff → Activate phone. Personally verify the employee,
@@ -96,11 +101,24 @@ as absent pulses. Geofence math and windows are enforced server-side.
   is required for manual On/Off Duty. Server time controls automatic day-end checkout. Legacy
   unauthenticated attendance/template RPCs are revoked. Deploy migration 9, dashboard and APK together:
   older APKs intentionally stop working after this migration.
+- **No migration for the blink change:** `staff_face_challenges.turn` still exists and is still
+  returned by `begin_face_check_v3()`, but it was never bound into the challenge proof
+  (`_face_consume_challenge_v3()` matches staff, device, action and template revision only), so the
+  app stopped reading it and the column is now dead data. The template contract is unchanged: five
+  normalized 128-value `sface-2021dec` samples. Do not rerun or edit migration 9 for this.
 
-**Capture timing (retuned after field timeouts):** a registration or duty check runs on a rolling
+**Capture timing (retuned for the blink flow):** a registration or duty check runs on a rolling
 policy rather than a strict per-frame deadline, because mid-range phones need up to ~1.5 s per frame.
+In browser validation on a real webcam the whole sequence took **9.1 s** at 30 fps with three guidance
+lines; the head-turn flow it replaced routinely exceeded the 90-second challenge.
 
-- Two frames are only accepted 350 ms apart, and the whole check must finish within 120 seconds.
+- Guidance frames are read about eight times a second; two evidence frames are only accepted 350 ms
+  apart, and the whole check must finish within 120 seconds.
+- A blink is a natural close-and-reopen within 1.2 s, measured against the person's own open-eye
+  baseline. Holding the eyes shut is not accepted, and one visible closed frame is enough on a slow
+  phone.
+- Post-blink sampling must finish inside 4 s, and the framing must hold: a face that drifts out of
+  frame or is rejected by liveness discards only the samples taken after the blink, never the anchor.
 - Quality rejections (move closer, hold still, lighting) no longer restart a check in progress.
   Previously any 1.8 s of rejections wiped the collected samples, so registration could not finish.
 - Dropped detections and liveness rejections restart only after four and three consecutive frames
@@ -111,8 +129,12 @@ policy rather than a strict per-frame deadline, because mid-range phones need up
 
 **Accuracy and liveness limits:** this is not Aadhaar FaceRD, certified PAD or a measured equivalent.
 The initial SFace cosine threshold is 0.363; MiniFASNet live probability must be at least 0.80.
+The blink is a liveness *aid*, not a presentation-attack classifier: a high-quality video of the
+employee blinking can satisfy it, which is why MiniFASNet still screens every evidence frame.
 These are provisional operating points, not accuracy percentages. Validate on the actual phones,
 lighting and employee population before rollout; do not lower thresholds just to make retries pass.
+Employees who cannot blink on command (paralysis, severe ptosis, one eye) currently cannot complete
+the check: they need a supervised exemption, not a lower threshold.
 A modified/rooted app can bypass client-side face checks despite device authorization and nonces.
 Higher assurance requires a trusted attestation/verification architecture, not just another model.
 
@@ -200,7 +222,11 @@ You don't need the IDE. Two options:
 Staff log in with the mobile number an admin enrolled, plus a one-time activation code on a new
 installation. Admins who log into the phone app see a notice pointing them to the web dashboard.
 Android screenshots/recording and recent-app thumbnails are blocked to keep camera frames out of
-system captures. Bundled models add about 41 MB before APK compression; inference needs no model download.
+system captures. Inference needs no model download. Bundled `assets/face/` is 43 MB before APK
+compression (SFace alone is 38.7 MB). The blink flow adds Google MediaPipe: its native library is
+14.4 MB for `arm64-v8a` and 10.1 MB for `armeabi-v7a`, and `face_landmarker.task` is 3.76 MB.
+Because field staff install one hand-built APK, `app/build.gradle.kts` filters to those two ARM ABIs
+instead of shipping x86/x86_64 as well.
 
 ---
 
@@ -302,7 +328,7 @@ app/src/main/java/com/vsk/attendance/
   data/{Models,SupabaseApi,SessionStore}.kt
   util/GeoUtils.kt               # Haversine + IST clock
   location/{LocationHelper,AttendanceRules}.kt
-  face/{FaceTemplate,FaceCheckSession,FaceEngine,FaceCaptureCard}.kt
+  face/{FaceTemplate,FaceGeometry,BlinkTracker,FaceInstruction,FaceCheckSession,FaceGuide,FaceEngine,FaceCaptureCard}.kt
   ui/{MainViewModel,LoginScreen,FaceEnrollScreen,AttendanceScreen}.kt + theme/
 app/src/main/assets/face/        # pinned local models, checksums, licenses and conversion provenance
 app/src/test/                    # JVM template and capture-session regression tests
@@ -362,20 +388,27 @@ Early present pulse + many absent pulses = "came, then left." No check-in + no p
 
 ## Verification and limits
 
-- JVM face tests: `gradle testDebugUnitTest` with the Android toolchain. Fifty template/session tests
-  also passed using the Kotlin 2.0.21 JVM compiler directly, without installing an Android SDK.
+- JVM face tests: `gradle testDebugUnitTest` with the Android toolchain. Eighty-three template,
+  geometry, blink-tracker and capture-session tests also passed using the Kotlin 2.0.21 JVM compiler
+  directly, without installing an Android SDK.
 - SQL regressions: `npm ci --prefix supabase/tests` then `npm test --prefix supabase/tests`.
   This creates a disposable in-memory PostgreSQL database, applies all nine migrations, tests 110
   authorization/activation/challenge assertions, and reruns migration 9 on empty and populated state.
   It uses no Supabase credentials or live connections. Do not paste the test fixture into a live database.
+- Blink thresholds were tuned against a real laptop webcam in a browser prototype (MediaPipe
+  tasks-vision 1.1.1 in the GPU delegate, 30 fps): a complete check took 9.1 s from button press,
+  with blink peak 0.90 against the 0.55 close threshold and zero framing rejections over 137 face
+  frames. That prototype is not part of this repository; the shipped values come from it.
 - Model qualification: pinned file hashes checked; MiniFASNet ONNX initializers matched the upstream
   checkpoint exactly after conversion transforms. OpenCV 4.12 desktop CPU synthetic inference passed
-  for all three packaged models. The Kotlin engine compiled against actual OpenCV Java APIs with
-  minimal Android stubs. These checks are **not an Android APK build or biometric accuracy test**.
+  for all three packaged models. The Kotlin engine compiled against actual OpenCV Java APIs, and
+  `FaceGuide.kt` against actual MediaPipe 1.1.1 task classes, both with minimal Android stubs. These
+  checks are **not an Android APK build or biometric accuracy test**.
 - Dashboard activation/reset, failure/retry, narrow layouts, assignments and bulk-upload browser
   regressions passed in isolated preview mode, with production API access blocked.
 - Full APK compilation, Android ARM/JNI execution, camera UI and real-person/attack validation remain
-  required on physical phones. The current CI build workflow does not run JVM tests automatically;
+  required on physical phones. `FaceCaptureCard.kt` (CameraX + Compose) has no local compiler here, so
+  CI is its first real build. The current CI build workflow does not run JVM tests automatically;
   run the test command as part of release validation before distributing the APK.
 - Attendance tracking is **foreground only** (app open). Working with the app closed needs Android
   background-location permission + a foreground service + battery-optimization handling.

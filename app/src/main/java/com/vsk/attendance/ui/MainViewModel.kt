@@ -55,7 +55,6 @@ data class AttendanceUi(
 class PreparedFaceCheck internal constructor(
     val challengeId: String,
     val action: String,
-    val turn: String,
     val template: String,
     internal val staffId: String,
     internal val localRevision: String?,
@@ -215,9 +214,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     return@launch
                 }
                 val id = r.challengeId
-                val turn = r.turn
                 val expiresAt = requestedAt + r.expiresIn.coerceAtMost(90).toLong() * 1_000L
-                if (id.isNullOrBlank() || turn !in listOf("left", "right") || r.faceRevision.isNullOrBlank()) {
+                if (id.isNullOrBlank() || r.faceRevision.isNullOrBlank()) {
                     showMessage("The face challenge is invalid. Please try again.")
                     return@launch
                 }
@@ -229,7 +227,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 if (!usableLocation()) return@launch
                 val check = PreparedFaceCheck(
-                    id, action, turn!!, s.faceTemplate!!, s.id, s.faceRevision, r.faceRevision,
+                    id, action, s.faceTemplate!!, s.id, s.faceRevision, r.faceRevision,
                     expiresAt, dayIST(), _attendance.value.checkInAt, _attendance.value.checkOutAt
                 )
                 _faceCheck.value = check

@@ -311,7 +311,7 @@ fun AttendanceScreen(vm: MainViewModel) {
                         style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold
                     )
                     Text(
-                        "Follow the camera instructions, including the requested head turn. " +
+                        "Look at the camera and blink when the screen asks. " +
                             "Face and presentation checks run on this phone; no camera image is uploaded.",
                         style = MaterialTheme.typography.bodySmall, color = Slate,
                         modifier = Modifier.padding(top = 2.dp, bottom = 12.dp)
@@ -320,7 +320,6 @@ fun AttendanceScreen(vm: MainViewModel) {
                         FaceCaptureCard(
                             enrolling = false,
                             template = check.template,
-                            turn = check.turn,
                             enabled = !busy,
                             buttonColor = if (check.action == "on") Green else Red,
                             onComplete = {

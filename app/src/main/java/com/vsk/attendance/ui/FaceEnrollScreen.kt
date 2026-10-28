@@ -26,7 +26,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.vsk.attendance.face.FaceCaptureCard
-import java.security.SecureRandom
 import kotlinx.coroutines.launch
 
 @Composable
@@ -35,7 +34,6 @@ fun FaceEnrollScreen(vm: MainViewModel) {
     val busy by vm.enrollmentBusy.collectAsState()
     val scope = rememberCoroutineScope()
     val staffId = staff?.id
-    val turn = remember(staffId) { if (SecureRandom().nextBoolean()) "left" else "right" }
     var msg by remember(staffId) { mutableStateOf<String?>(null) }
     var submitted by remember(staffId) { mutableStateOf(false) }
     var saved by remember(staffId) { mutableStateOf(false) }
@@ -46,10 +44,11 @@ fun FaceEnrollScreen(vm: MainViewModel) {
     ) {
         Text("Supervised face registration", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Text(
-            "Register ${staff?.fullName ?: "this user"} with your administrator present. Follow the " +
-                "camera instructions in good light. Face matching and presentation-attack checks run on " +
-                "this phone. A biometric template is saved to your account and encrypted on this phone; " +
-                "camera images are not uploaded. Duty checks use this registration.",
+            "Register ${staff?.fullName ?: "this user"} with your administrator present. Hold the phone at " +
+                "eye level in good light, look at the camera and blink when the screen asks. Face matching " +
+                "and presentation-attack checks run on this phone. A biometric template is saved to your " +
+                "account and encrypted on this phone; camera images are not uploaded. Duty checks use this " +
+                "registration.",
             style = MaterialTheme.typography.bodyMedium,
             color = Color(0xFF64748B),
             modifier = Modifier.padding(top = 6.dp, bottom = 16.dp)
@@ -71,7 +70,6 @@ fun FaceEnrollScreen(vm: MainViewModel) {
                 Column(Modifier.padding(16.dp)) {
                     FaceCaptureCard(
                         enrolling = true,
-                        turn = turn,
                         enabled = allowed && !busy && !submitted && !saved,
                         onComplete = { template ->
                             // The engine owns inference. Marshal completion onto the UI dispatcher.

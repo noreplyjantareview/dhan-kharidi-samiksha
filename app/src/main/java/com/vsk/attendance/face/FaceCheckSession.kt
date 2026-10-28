@@ -3,7 +3,7 @@ package com.vsk.attendance.face
 import kotlin.math.abs
 
 internal data class FaceCheckProgress(
-    val message: String,
+    val message: FaceInstruction,
     val accepted: Int = 0,
     val complete: Boolean = false,
     val template: String? = null
@@ -20,31 +20,153 @@ internal enum class FaceInterruption {
     Identity
 }
 
+/** What the employee is being asked to do. One stage, one short line. */
+internal enum class FaceStage { Align, Blink, Capture, Done }
+
+/** Everything the mesh model knows about the current frame, before any recognition work. */
+internal data class FaceGuidance(
+    val openRatio: Float,
+    val expressionClosure: Float,
+    val framing: FramingReason? = null
+)
+
+/**
+ * Blink-guided face check, replacing the head-turn sequence that field staff could not follow.
+ *
+ * Stages: two centred frames build the identity anchor, one blink proves a live person is driving
+ * the camera, then three frames taken with the eye open complete the five-sample template. Evidence
+ * frames are the only ones that run the recognition and anti-spoof models, so the wait between
+ * pressing the button and finishing is measured in seconds rather than in model runs.
+ *
+ * Nothing about the stored template changed: still five normalized 128-value SFace samples in the
+ * sface-2021dec format, so no server migration is involved.
+ */
 internal class FaceCheckSession(
     private val enrolling: Boolean,
     storedTemplate: String?,
-    private val turn: String,
     private val startedAt: Long
 ) {
     private val reference = FaceTemplate.decode(storedTemplate)
     private val samples = mutableListOf<List<Float>>()
+    private val blink = BlinkTracker()
     private var anchor: List<Float>? = null
-    private var stage = 0
-    private var stageFrames = 0
-    private var baseline = 0f
+    private var stage = FaceStage.Align
+    private var alignFrames = 0
+    private var captureSamples = 0
+    private var anchoredSamples = 0
+    private var captureStartedAt = 0L
+    private var closedStreak = 0
     private var lastAcceptedAt = -1L
     private var lastSeenAt = startedAt
+    private var framingFailedSince = 0L
+    private var lastClosure = 1f
+    private var lastFraming: FramingReason? = FramingReason.EyesOut
     private var lostStreak = 0
     private var padStreak = 0
+    private var blinkPeak = 0f
     private var finished = false
+
+    val currentStage: FaceStage get() = stage
+
+    /** Peak closure of the blink that unlocked sampling, minus the threshold: diagnostic margin. */
+    val blinkMargin: Float get() = blinkPeak - BlinkTracker.CLOSE_T
+
+    /**
+     * Recognition and anti-spoof models are heavy and a half-shut eyelid ruins the sample, so a
+     * frame only runs them while the face is framed and the eyes say it is open.
+     */
+    val needsEvidence: Boolean
+        get() = (stage == FaceStage.Align || stage == FaceStage.Capture) && eyesReady
+
+    private val eyesReady: Boolean
+        get() = lastFraming == null && lastClosure < BlinkTracker.OPEN_T
 
     init {
         require(enrolling || reference != null) { "Your face registration needs an administrator reset." }
-        require(turn == "left" || turn == "right")
+    }
+
+    /** Every frame goes through here first; it is cheap and decides whether the heavy models run. */
+    fun onGuidance(guide: FaceGuidance, now: Long): FaceCheckProgress {
+        if (finished) return FaceCheckProgress(FaceCopy.COMPLETE, SAMPLES_REQUIRED, complete = true)
+        if (now - startedAt > TIMEOUT_MS) return FaceCheckProgress(FaceCopy.TIMED_OUT, samples.size)
+        val absent = now - lastSeenAt > PRESENCE_GAP_MS
+        lastSeenAt = now
+        if (absent) reset()
+        val reading = blink.observe(guide.openRatio, guide.expressionClosure, guide.framing == null, now)
+        lastClosure = reading.closure
+        lastFraming = guide.framing
+        if (guide.framing != null) {
+            framingFailedSince = if (framingFailedSince == 0L) now else framingFailedSince
+            if (now - framingFailedSince < FAIL_QUIET_MS) return progress()
+            if (stage == FaceStage.Capture) abortCapture()
+            return FaceCheckProgress(guide.framing.instruction, samples.size)
+        }
+        framingFailedSince = 0L
+        if (reading.eyeClosed) {
+            closedStreak++
+            if (closedStreak > CLOSED_FRAMES_MAX && stage == FaceStage.Capture) abortCapture()
+            return progress()
+        }
+        closedStreak = 0
+        if (stage == FaceStage.Capture && now - captureStartedAt > CAPTURE_WINDOW_MS) abortCapture()
+        if (stage == FaceStage.Blink && reading.blink) {
+            blinkPeak = reading.peakClosure
+            stage = FaceStage.Capture
+            captureStartedAt = now
+            captureSamples = 0
+            anchoredSamples = samples.size
+        }
+        return progress()
+    }
+
+    /** A frame that passed detection, quality and anti-spoof screening in the heavier OpenCV pass. */
+    fun onEvidence(vector: List<Float>, yaw: Float, now: Long): FaceCheckProgress {
+        val eyesWereReady = eyesReady
+        if (finished) return FaceCheckProgress(FaceCopy.COMPLETE, SAMPLES_REQUIRED, complete = true)
+        if (now - startedAt > TIMEOUT_MS) return FaceCheckProgress(FaceCopy.TIMED_OUT, samples.size)
+        if (!FaceTemplate.validVector(vector) || !yaw.isFinite()) {
+            return rejected(FaceCopy.UNREADABLE, now, FaceInterruption.Identity)
+        }
+        if (reference != null && !reference.matches(vector)) {
+            return rejected(FaceCopy.NO_MATCH, now, FaceInterruption.Identity)
+        }
+        if (anchor != null && FaceTemplate.cosine(anchor!!, vector) < FaceTemplate.MATCH_THRESHOLD) {
+            return rejected(FaceCopy.ONE_PERSON, now, FaceInterruption.Identity)
+        }
+        if (now - lastSeenAt > PRESENCE_GAP_MS) reset()
+        lastSeenAt = now
+        lostStreak = 0
+        padStreak = 0
+        if (!eyesWereReady) return progress()
+        if (lastAcceptedAt >= 0 && now - lastAcceptedAt < EVIDENCE_SPACING_MS) return progress()
+        if (abs(yaw) > CENTER_YAW) return FaceCheckProgress(FaceCopy.LOOK, samples.size)
+        lastAcceptedAt = now
+        when (stage) {
+            FaceStage.Align -> {
+                if (anchor == null) anchor = vector
+                if (enrolling) samples.add(vector)
+                alignFrames++
+                if (alignFrames >= ALIGN_SAMPLES) stage = FaceStage.Blink
+            }
+            FaceStage.Capture -> {
+                if (enrolling) samples.add(vector)
+                captureSamples++
+                if (captureSamples >= FINAL_SAMPLES) {
+                    finished = true
+                    stage = FaceStage.Done
+                    return FaceCheckProgress(
+                        FaceCopy.COMPLETE, SAMPLES_REQUIRED, true,
+                        if (enrolling) FaceTemplate(samples = samples.take(SAMPLES_REQUIRED)).encode() else null
+                    )
+                }
+            }
+            else -> Unit
+        }
+        return progress()
     }
 
     fun rejected(
-        message: String,
+        instruction: FaceInstruction,
         now: Long,
         interruption: FaceInterruption = FaceInterruption.Quality
     ): FaceCheckProgress {
@@ -60,6 +182,7 @@ internal class FaceCheckSession(
             interruption == FaceInterruption.Pad -> {
                 lostStreak = 0
                 padStreak++
+                if (stage == FaceStage.Capture) abortCapture()
                 if (padStreak >= PAD_FRAMES) reset()
             }
             else -> {
@@ -67,93 +190,41 @@ internal class FaceCheckSession(
                 padStreak = 0
             }
         }
-        return FaceCheckProgress(message, samples.size)
+        return FaceCheckProgress(instruction, samples.size)
     }
 
-    fun accept(vector: List<Float>, yaw: Float, now: Long): FaceCheckProgress {
-        if (finished) return FaceCheckProgress("Face check complete", complete = true)
-        if (now - startedAt > TIMEOUT_MS) {
-            return FaceCheckProgress("Face check timed out. Start again and follow the on-screen steps.")
-        }
-        if (!FaceTemplate.validVector(vector) || !yaw.isFinite()) {
-            return rejected("Face could not be read. Face the camera and retry.", now, FaceInterruption.Identity)
-        }
-        val absent = now - lastSeenAt > PRESENCE_GAP_MS
-        lastSeenAt = now
-        lostStreak = 0
-        padStreak = 0
-        if (absent) reset()
-        if (reference != null && !reference.matches(vector)) {
-            return rejected("Face did not match. Face the camera in even light and retry.", now, FaceInterruption.Identity)
-        }
-        if (anchor != null && FaceTemplate.cosine(anchor!!, vector) < FaceTemplate.MATCH_THRESHOLD) {
-            return rejected("Keep the same person in view throughout the check.", now, FaceInterruption.Identity)
-        }
-        if (lastAcceptedAt >= 0 && now - lastAcceptedAt < EVIDENCE_SPACING_MS) return progress()
-        lastAcceptedAt = now
-        when (stage) {
-            0 -> {
-                if (abs(yaw) > CENTER_YAW) return FaceCheckProgress("Look straight at the camera", samples.size)
-                if (anchor == null) anchor = vector
-                baseline += yaw
-                if (enrolling) samples.add(vector)
-                stageFrames++
-                if (stageFrames == 2) {
-                    baseline /= 2f
-                    stage = 1
-                    stageFrames = 0
-                }
-            }
-            1 -> {
-                val movement = (yaw - baseline) * if (turn == "left") 1f else -1f
-                if (movement >= TURN_MIN && movement <= TURN_MAX) {
-                    stageFrames++
-                    if (stageFrames == 2) {
-                        stage = 2
-                        stageFrames = 0
-                    }
-                } else {
-                    stageFrames = 0
-                }
-            }
-            2 -> {
-                if (abs(yaw - baseline) > RETURN_TOLERANCE || abs(yaw) > CENTER_YAW) {
-                    stageFrames = 0
-                    if (enrolling) while (samples.size > 2) samples.removeAt(samples.lastIndex)
-                    return FaceCheckProgress("Look straight at the camera again", samples.size)
-                }
-                if (enrolling) samples.add(vector)
-                stageFrames++
-                if (stageFrames == 3) {
-                    finished = true
-                    return FaceCheckProgress(
-                        "Face check complete", 5, true,
-                        if (enrolling) FaceTemplate(samples = samples.toList()).encode() else null
-                    )
-                }
-            }
-        }
-        return progress()
+    private fun abortCapture() {
+        if (enrolling) while (samples.size > anchoredSamples) samples.removeAt(samples.lastIndex)
+        captureSamples = 0
+        closedStreak = 0
+        stage = FaceStage.Blink
     }
 
-    private fun progress() = FaceCheckProgress(
-        when (stage) {
-            0 -> "Look straight at the camera and hold still"
-            1 -> "Slowly turn your head slightly to your $turn"
-            else -> "Look straight at the camera again and hold still"
-        },
-        if (enrolling) samples.size else if (stage == 2) 2 + stageFrames else stageFrames
-    )
+    private fun progress() = FaceCheckProgress(messageFor(stage), if (enrolling) samples.size else 0)
+
+    private fun messageFor(current: FaceStage): FaceInstruction = when (current) {
+        FaceStage.Align -> FaceCopy.LOOK
+        FaceStage.Blink -> FaceCopy.BLINK_NOW
+        FaceStage.Capture -> FaceCopy.KEEP_LOOKING
+        FaceStage.Done -> FaceCopy.COMPLETE
+    }
 
     private fun reset() {
         samples.clear()
         anchor = null
-        stage = 0
-        stageFrames = 0
-        baseline = 0f
+        stage = FaceStage.Align
+        alignFrames = 0
+        captureSamples = 0
+        anchoredSamples = 0
+        closedStreak = 0
+        framingFailedSince = 0L
         lastAcceptedAt = -1L
         lostStreak = 0
         padStreak = 0
+        blinkPeak = 0f
+        lastClosure = 1f
+        lastFraming = FramingReason.EyesOut
+        blink.reset()
     }
 
     companion object {
@@ -166,8 +237,18 @@ internal class FaceCheckSession(
         const val FACE_LOST_FRAMES = 4
         const val PAD_FRAMES = 3
         const val CENTER_YAW = 0.22f
-        const val RETURN_TOLERANCE = 0.16f
-        const val TURN_MIN = 0.15f
-        const val TURN_MAX = 0.55f
+
+        /** Frames the eye must stay shut before it counts as a squeeze rather than a blink. */
+        const val CLOSED_FRAMES_MAX = 4
+
+        /** A framing complaint only appears once it has been true this long, so jitter stays silent. */
+        const val FAIL_QUIET_MS = 600L
+
+        /** Longest a post-blink burst may take before the employee is asked to blink again. */
+        const val CAPTURE_WINDOW_MS = 4_000L
+
+        const val ALIGN_SAMPLES = 2
+        const val FINAL_SAMPLES = 3
+        const val SAMPLES_REQUIRED = ALIGN_SAMPLES + FINAL_SAMPLES
     }
 }

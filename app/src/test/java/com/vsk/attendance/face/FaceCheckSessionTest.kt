@@ -3,13 +3,21 @@ package com.vsk.attendance.face
 import org.junit.Assert.*
 import org.junit.Test
 
+/**
+ * The blink sequence replaces the head turn, so every case drives the two entry points the analyzer
+ * has: cheap mesh guidance on every frame, and recognition evidence only when the eyes and the
+ * framing say the frame is worth the heavy models.
+ */
 class FaceCheckSessionTest {
     private fun axis(index: Int = 0, magnitude: Float = 1f): List<Float> =
         List(128) { if (it == index) magnitude else 0f }
 
     private fun stored(): String = FaceTemplate(samples = List(5) { axis() }).encode()
 
-    // Exercise the entire security matrix even when an earlier case fails.
+    private fun vector(offset: Float): List<Float> =
+        FaceTemplate.normalized(List(128) { if (it == 0) 1f else if (it == 1) offset else 0f })!!
+
+    // Exercise the whole security matrix even when an earlier case fails.
     private fun <T> assertEveryCase(cases: List<T>, check: (T) -> Unit) {
         val failures = cases.mapIndexedNotNull { index, value ->
             runCatching { check(value) }.exceptionOrNull()?.let { "case $index: $it" }
@@ -17,493 +25,557 @@ class FaceCheckSessionTest {
         assertTrue(failures.joinToString("\n"), failures.isEmpty())
     }
 
-    private inner class Driver(val enrolling: Boolean = true, val turn: String = "left") {
+    private inner class Driver(
+        val enrolling: Boolean = true,
+        template: String? = if (enrolling) null else stored()
+    ) {
         val startedAt = 1000L
-        val session = FaceCheckSession(enrolling, if (enrolling) null else stored(), turn, startedAt)
-        var now = startedAt - 350
-        val turnYaw: Float get() = if (turn == "left") 0.30f else -0.30f
+        val session = FaceCheckSession(enrolling, template, startedAt)
+        var now = startedAt
 
-        fun frame(yaw: Float = 0f, vector: List<Float> = axis(), delta: Long = 350): FaceCheckProgress {
+        /** This person's resting eyelid ratio; the tracker learns the blink baseline from it. */
+        val openRatio = 0.30f
+
+        fun guide(
+            open: Boolean = true,
+            framing: FramingReason? = null,
+            delta: Long = 350,
+            expressionClosure: Float = 0f
+        ): FaceCheckProgress {
             now += delta
-            return session.accept(vector, yaw, now)
+            return session.onGuidance(
+                FaceGuidance(if (open) openRatio else 0.02f, expressionClosure, framing), now
+            )
+        }
+
+        /** One analyzer tick: guidance first, then the heavy models only if the session asks. */
+        fun frame(
+            yaw: Float = 0f,
+            vector: List<Float> = axis(),
+            delta: Long = 350,
+            open: Boolean = true,
+            framing: FramingReason? = null
+        ): FaceCheckProgress {
+            val seen = guide(open, framing, delta)
+            return if (session.needsEvidence) session.onEvidence(vector, yaw, now) else seen
         }
 
         fun reject(
             failure: FaceInterruption = FaceInterruption.Quality,
             delta: Long = 350,
-            message: String = "Invalid frame"
+            message: FaceInstruction = FaceCopy.TOO_BLURRY
         ): FaceCheckProgress {
             now += delta
             return session.rejected(message, now, failure)
         }
 
-        fun enterFinalStage() {
-            assertFalse(frame().complete)
-            assertFalse(frame().complete)
-            assertFalse(frame(turnYaw).complete)
-            assertFalse(frame(turnYaw).complete)
+        fun eyesShut(frames: Int = 2, spacing: Long = 150) {
+            repeat(frames) { guide(open = false, delta = spacing) }
         }
 
-        fun finish(): FaceCheckProgress {
-            assertFalse("First final frame cannot complete", frame().complete)
-            assertFalse("Second final frame cannot complete", frame().complete)
-            return frame().also { assertTrue("Third final frame must complete", it.complete) }
+        /** Close and reopen without claiming the unlock worked. */
+        fun blinkAttempt(
+            closedFrames: Int = 2,
+            spacing: Long = 150,
+            vector: List<Float> = axis()
+        ): FaceCheckProgress {
+            eyesShut(closedFrames, spacing)
+            return frame(vector = vector, delta = spacing)
         }
 
-        fun challenge(): FaceCheckProgress {
-            enterFinalStage()
-            return finish()
+        /** The two centred, open frames that build the identity anchor. */
+        fun align(vector: List<Float> = axis()) {
+            repeat(FaceCheckSession.ALIGN_SAMPLES) { assertFalse(frame(vector = vector).complete) }
+            assertEquals(FaceStage.Blink, session.currentStage)
+        }
+
+        /** A natural blink, which must unlock post-blink sampling. */
+        fun blink(
+            closedFrames: Int = 2,
+            spacing: Long = 150,
+            vector: List<Float> = axis()
+        ): FaceCheckProgress {
+            val reopened = blinkAttempt(closedFrames, spacing, vector)
+            assertEquals("A blink must unlock sampling", FaceStage.Capture, session.currentStage)
+            assertFalse(reopened.complete)
+            return reopened
+        }
+
+        /** Draw the post-blink burst to completion; the blink itself banked the first sample. */
+        fun capture(vector: List<Float> = axis()): FaceCheckProgress {
+            var last: FaceCheckProgress? = null
+            var completed = false
+            repeat(FaceCheckSession.FINAL_SAMPLES) {
+                if (!completed) {
+                    last = frame(vector = vector)
+                    completed = last!!.complete
+                }
+            }
+            assertTrue("Post-blink sampling did not complete in the expected frames", completed)
+            return last!!
+        }
+
+        /** The whole check from a clean session. */
+        fun challenge(vector: List<Float> = axis()): FaceCheckProgress {
+            align(vector)
+            blink(vector = vector)
+            return capture(vector)
         }
     }
 
-    @Test fun enrollmentRequiresTwoCenterTwoCorrectTurnAndThreeFinalFramesForBothDirections() {
-        for (turn in listOf("left", "right")) {
-            val driver = Driver(turn = turn)
-            val first = driver.frame()
-            assertEquals(1, first.accepted)
-            assertFalse(first.complete)
-            val second = driver.frame()
-            assertEquals(2, second.accepted)
-            assertTrue(second.message.contains(turn))
-            assertFalse(driver.frame(driver.turnYaw).complete)
-            assertFalse(driver.frame(driver.turnYaw).complete)
-            val result = driver.finish()
-            assertEquals(5, result.accepted)
-            val template = FaceTemplate.decode(result.template)!!
-            assertEquals(5, template.samples.size)
-        }
-    }
-
-    @Test fun enrollmentStoresOnlyTwoInitialAndThreeFinalSamplesNotTurnSamples() {
-        fun vector(offset: Float) = FaceTemplate.normalized(
-            List(128) { if (it == 0) 1f else if (it == 1) offset else 0f }
-        )!!
-        val vectors = List(7) { vector(it * 0.05f) }
+    @Test fun enrollmentNeedsTwoOpenFramesOneBlinkThenThreeSamples() {
         val driver = Driver()
-        val yaws = listOf(0f, 0f, driver.turnYaw, driver.turnYaw, 0f, 0f, 0f)
-        val results = yaws.indices.map { driver.frame(yaws[it], vectors[it]) }
-        assertTrue(results.last().complete)
-        assertEquals(listOf(vectors[0], vectors[1], vectors[4], vectors[5], vectors[6]),
-            FaceTemplate.decode(results.last().template)!!.samples)
+        val first = driver.frame()
+        assertEquals(1, first.accepted)
+        assertEquals(FaceStage.Align, driver.session.currentStage)
+        driver.align()
+        // Without a blink the check waits, however long the employee stares at the camera.
+        repeat(6) {
+            val waiting = driver.frame()
+            assertFalse(waiting.complete)
+            assertEquals(2, waiting.accepted)
+        }
+        assertEquals(3, driver.blink().accepted)
+        assertFalse(driver.frame().complete)
+        val result = driver.frame()
+        assertTrue(result.complete)
+        assertEquals(5, result.accepted)
+        assertEquals(5, FaceTemplate.decode(result.template)!!.samples.size)
     }
 
-    @Test fun verificationAlsoRequiresThreeFinalFramesAndDoesNotEmitNewTemplate() {
-        for (turn in listOf("left", "right")) {
-            val driver = Driver(enrolling = false, turn = turn)
-            driver.enterFinalStage()
-            val result = driver.finish()
-            assertEquals(5, result.accepted)
-            assertNull(result.template)
-        }
+    @Test fun onlyOpenFramedEvidenceFramesEnterTheTemplate() {
+        val kept = List(5) { vector(0.01f * (it + 1)) }
+        val driver = Driver()
+        assertEquals(1, driver.frame(vector = kept[0]).accepted)
+        assertEquals(2, driver.frame(vector = kept[1]).accepted)
+        // Shut eyes and an unframed face never reach recognition, so they cannot be stored.
+        assertFalse(driver.guide(open = false, delta = 100).complete)
+        assertFalse(driver.session.needsEvidence)
+        assertFalse(driver.guide(framing = FramingReason.TooFar, delta = 100).complete)
+        assertFalse(driver.session.needsEvidence)
+        assertEquals(3, driver.blink(vector = kept[2]).accepted)
+        assertFalse(driver.frame(vector = kept[3]).complete)
+        val result = driver.frame(vector = kept[4])
+        assertTrue(result.complete)
+        assertEquals(kept, FaceTemplate.decode(result.template)!!.samples)
+    }
+
+    @Test fun verificationFollowsTheSameBlinkAndReturnsNoTemplate() {
+        val driver = Driver(enrolling = false)
+        driver.align()
+        driver.blink()
+        assertFalse(driver.frame().complete)
+        val result = driver.frame()
+        assertTrue(result.complete)
+        assertEquals(5, result.accepted)
+        assertNull(result.template)
     }
 
     @Test fun verificationRequiresCurrentStoredTemplate() {
         for (invalid in listOf(null, "", "{}", stored().replace("\"v\":3", "\"v\":2"))) {
-            assertThrows(IllegalArgumentException::class.java) {
-                FaceCheckSession(false, invalid, "left", 0)
-            }
+            assertThrows(IllegalArgumentException::class.java) { FaceCheckSession(false, invalid, 0) }
         }
     }
 
-    @Test fun challengeDirectionMustBeLeftOrRight() {
-        for (turn in listOf("", "up", "LEFT", "random")) {
-            assertThrows(IllegalArgumentException::class.java) {
-                FaceCheckSession(true, null, turn, 0)
-            }
-        }
-    }
-
-    @Test fun centerFramesAloneCannotComplete() {
+    @Test fun alignmentFramesAloneCannotComplete() {
         for (enrolling in listOf(true, false)) {
             val driver = Driver(enrolling)
-            repeat(20) { assertFalse(driver.frame().complete) }
+            repeat(40) { assertFalse(driver.frame().complete) }
+            assertEquals(FaceStage.Blink, driver.session.currentStage)
         }
     }
 
-    @Test fun initialNonCenteredFaceDoesNotCount() {
+    @Test fun recognitionRunsOnlyWhileTheEyesAreOpenAndTheFaceIsFramed() {
         val driver = Driver()
-        repeat(4) { assertEquals(0, driver.frame(0.30f).accepted) }
-        assertNotNull(driver.challenge().template)
-    }
-
-    @Test fun wrongDirectionCannotCompleteButCorrectDirectionCanRecover() {
-        for (turn in listOf("left", "right")) {
-            val driver = Driver(turn = turn)
-            driver.frame()
-            driver.frame()
-            repeat(4) { assertFalse(driver.frame(-driver.turnYaw).complete) }
-            repeat(4) { assertFalse(driver.frame().complete) }
-            driver.frame(driver.turnYaw)
-            driver.frame(driver.turnYaw)
-            driver.finish()
-        }
-    }
-
-    @Test fun turnNeedsTwoConsecutiveInRangeFrames() {
-        val driver = Driver()
+        assertFalse("Nothing has been read yet", driver.session.needsEvidence)
         driver.frame()
-        driver.frame()
-        driver.frame(driver.turnYaw)
-        driver.frame(-driver.turnYaw)
-        driver.frame(driver.turnYaw)
-        repeat(3) { assertFalse(driver.frame().complete) }
-        driver.frame(driver.turnYaw)
-        driver.frame(driver.turnYaw)
-        driver.finish()
+        assertTrue(driver.session.needsEvidence)
+        driver.eyesShut(1)
+        assertFalse("A shut eye is not worth a recognition run", driver.session.needsEvidence)
+        driver.frame(open = false)
+        driver.frame(framing = FramingReason.TooFar)
+        assertFalse("An unframed face is not worth a recognition run", driver.session.needsEvidence)
+        assertFalse(driver.guide().complete)
+        assertTrue("An open, framed face runs recognition again", driver.session.needsEvidence)
+        assertEquals(2, driver.frame().accepted)
     }
 
-    @Test fun turnTooSmallOrTooLargeCannotAdvance() {
-        for (turn in listOf("left", "right")) {
-            val driver = Driver(turn = turn)
-            driver.frame()
-            driver.frame()
-            val sign = if (turn == "left") 1 else -1
-            for (yaw in listOf(0.10f, 0.14f, 0.56f, 0.80f)) {
-                repeat(3) { assertFalse(driver.frame(yaw * sign).complete) }
-            }
-            repeat(3) { assertFalse(driver.frame().complete) }
-            driver.frame(driver.turnYaw)
-            driver.frame(driver.turnYaw)
-            driver.finish()
-        }
-    }
-
-    @Test fun turnIsRelativeToInitialYawBaseline() {
+    @Test fun blinkBeforeAlignmentIsFinishedDoesNotSkipToSampling() {
         val driver = Driver()
-        driver.frame(0.1f)
-        driver.frame(0.1f)
-        repeat(3) { assertFalse(driver.frame(0.24f).complete) }
-        driver.frame(0.35f)
-        driver.frame(0.35f)
-        assertFalse(driver.frame(0.1f).complete)
-        assertFalse(driver.frame(0.1f).complete)
-        assertTrue(driver.frame(0.1f).complete)
+        val stray = driver.blinkAttempt()
+        assertFalse(stray.complete)
+        assertEquals(FaceStage.Align, driver.session.currentStage)
+        assertEquals(1, stray.accepted)
+        assertTrue(driver.challenge().complete)
     }
 
-    @Test fun framesCloserThan350MillisecondsDoNotAdvanceAnyStage() {
+    @Test fun holdingTheEyesShutIsNotABlink() {
         val driver = Driver()
-        assertEquals(1, driver.frame().accepted)
-        assertEquals(1, driver.frame(delta = 349).accepted)
-        assertEquals(2, driver.frame(delta = 1).accepted)
-        driver.frame(driver.turnYaw)
-        driver.frame(driver.turnYaw, delta = 349)
-        // A duplicate/too-soon turn cannot put us in the final stage.
-        assertTrue(driver.frame(0f, delta = 0).message.contains("left"))
-        driver.frame(driver.turnYaw, delta = 1)
-        assertFalse(driver.frame().complete)
-        assertFalse(driver.frame(delta = 349).complete)
-        assertFalse(driver.frame(delta = 1).complete)
-        assertFalse(driver.frame(delta = 349).complete)
-        assertTrue(driver.frame(delta = 1).complete)
+        driver.align()
+        val squeezed = driver.blinkAttempt(closedFrames = 6, spacing = 300)
+        assertFalse(squeezed.complete)
+        assertEquals("A squeeze is not a live-face proof", FaceStage.Blink, driver.session.currentStage)
+        assertEquals(2, squeezed.accepted)
+        // Recovery: one natural blink and the check finishes normally.
+        driver.blink()
+        assertTrue(driver.capture().complete)
     }
 
-    @Test fun repeatedTimestampsCannotAccumulateEvidence() {
-        val driver = Driver()
-        driver.frame()
-        repeat(10) { assertEquals(1, driver.frame(delta = 0).accepted) }
-        driver.frame()
-        driver.frame(driver.turnYaw)
-        driver.frame(driver.turnYaw)
-        driver.finish()
-    }
-
-    @Test fun nonCenteredFinalFrameClearsFinalSampleStreak() {
+    @Test fun oneSeenBlinkFrameIsEnoughEvenOnASlowPhone() {
         for (enrolling in listOf(true, false)) {
             val driver = Driver(enrolling)
-            driver.enterFinalStage()
-            driver.frame()
-            driver.frame()
-            val interrupted = driver.frame(driver.turnYaw)
-            assertFalse(interrupted.complete)
-            if (enrolling) assertEquals(2, interrupted.accepted)
-            val result = driver.finish()
-            if (enrolling) assertEquals(5, FaceTemplate.decode(result.template)!!.samples.size)
+            driver.align()
+            // A phone that barely manages a frame every 800ms can catch only the closed frame.
+            driver.blinkAttempt(closedFrames = 1, spacing = 800)
+            assertEquals(FaceStage.Capture, driver.session.currentStage)
+            assertTrue(driver.capture().complete)
         }
     }
 
-    @Test fun identitySwitchResetsEnrollmentAndCannotReuseOldChallenge() {
+    @Test fun postBlinkBurstThatDragsOnIsRestarted() {
         val driver = Driver()
-        driver.enterFinalStage()
+        driver.align()
+        driver.blink()
+        assertEquals(4, driver.frame(delta = 2000).accepted)
+        val expired = driver.frame(delta = 2100)
+        assertFalse(expired.complete)
+        assertEquals("Post-blink samples are discarded with the window", 2, expired.accepted)
+        assertEquals(FaceStage.Blink, driver.session.currentStage)
+        assertEquals(FaceCopy.BLINK_NOW, expired.message)
+        driver.blink()
+        val result = driver.capture()
+        assertTrue(result.complete)
+        assertEquals(5, FaceTemplate.decode(result.template)!!.samples.size)
+    }
+
+    @Test fun movingOutOfFrameAfterTheBlinkDiscardsOnlyPostBlinkSamples() {
+        val driver = Driver()
+        driver.align()
+        driver.blink()
+        assertEquals(4, driver.frame().accepted)
+        val quiet = driver.frame(framing = FramingReason.TooFar)
+        assertFalse(quiet.complete)
+        assertEquals("A one-frame flicker must not start shouting", 4, quiet.accepted)
+        assertEquals(FaceCopy.KEEP_LOOKING, quiet.message)
+        val interrupted = driver.frame(framing = FramingReason.TooFar, delta = 700)
+        assertEquals(FaceCopy.MOVE_CLOSER, interrupted.message)
+        assertEquals(2, interrupted.accepted)
+        assertEquals(FaceStage.Blink, driver.session.currentStage)
+        driver.blink()
+        val result = driver.capture()
+        assertTrue(result.complete)
+        assertEquals(5, FaceTemplate.decode(result.template)!!.samples.size)
+    }
+
+    @Test fun framingComplaintWaitsForTheFailureToSettle() {
+        val driver = Driver()
+        assertEquals(FaceCopy.LOOK, driver.frame(framing = FramingReason.TooFar).message)
+        assertEquals(FaceCopy.LOOK, driver.frame(framing = FramingReason.Tilt, delta = 500).message)
+        assertEquals(FaceCopy.UPRIGHT, driver.frame(framing = FramingReason.Tilt, delta = 200).message)
+    }
+
+    @Test fun wrongPersonCannotReuseTheBlinkTheyAlreadyGave() {
+        val driver = Driver()
+        driver.align()
+        driver.blink()
         driver.frame()
-        driver.frame()
-        val failure = driver.frame(vector = axis(1))
-        assertFalse(failure.complete)
-        assertEquals(0, failure.accepted)
-        repeat(3) { assertFalse(driver.frame(vector = axis(1)).complete) }
-        driver.frame(driver.turnYaw, axis(1))
-        driver.frame(driver.turnYaw, axis(1))
-        assertFalse(driver.frame(vector = axis(1)).complete)
-        assertFalse(driver.frame(vector = axis(1)).complete)
-        val result = driver.frame(vector = axis(1))
+        val switched = driver.frame(vector = axis(1))
+        assertFalse(switched.complete)
+        assertEquals(0, switched.accepted)
+        assertEquals(FaceStage.Align, driver.session.currentStage)
+        val result = driver.challenge(axis(1))
         assertTrue(result.complete)
         assertTrue(FaceTemplate.decode(result.template)!!.samples.all { it == axis(1) })
     }
 
     @Test fun verificationRejectsDifferentIdentityAndRequiresFreshChallenge() {
         val driver = Driver(enrolling = false)
-        driver.enterFinalStage()
-        driver.frame()
+        driver.align()
+        driver.blink()
         driver.frame()
         val failure = driver.frame(vector = axis(1))
         assertFalse(failure.complete)
         assertEquals(0, failure.accepted)
-        driver.challenge()
+        assertTrue(driver.challenge().complete)
     }
 
-    @Test fun identitySwitchInsideSamplingWindowStillResetsEvidence() {
+    @Test fun identityChangeIsNotHiddenByEvidenceThrottling() {
         assertEveryCase(listOf(true, false)) { enrolling ->
             val driver = Driver(enrolling)
-            driver.enterFinalStage()
+            driver.align()
+            driver.blink()
             driver.frame()
-            driver.frame()
-            val failure = driver.frame(vector = axis(1), delta = 100)
-            assertFalse(failure.complete)
-            val following = driver.frame(delta = 250)
-            assertEquals("Identity changes must not be hidden by sampling throttling", 0, failure.accepted)
-            assertFalse(following.complete)
+            val insideSpacing = driver.frame(vector = axis(1), delta = 100)
+            assertEquals("Identity changes must not be swallowed by sampling throttling",
+                0, insideSpacing.accepted)
+            assertFalse(insideSpacing.complete)
         }
     }
 
-    @Test fun verificationAnchorRejectsSwitchEvenIfBothVectorsMatchStoredConsensus() {
+    @Test fun storedTemplateConsensusCannotHideAnIdentitySwitch() {
         val a = axis()
         val b = axis(1)
         val reference = FaceTemplate(samples = listOf(a, a, b, b, axis(2)))
         assertTrue(reference.matches(a))
         assertTrue(reference.matches(b))
-        val session = FaceCheckSession(false, reference.encode(), "left", 0)
-        session.accept(a, 0f, 0)
-        session.accept(a, 0f, 350)
-        session.accept(a, 0.3f, 700)
-        session.accept(a, 0.3f, 1050)
-        session.accept(a, 0f, 1400)
-        session.accept(a, 0f, 1750)
-        val result = session.accept(b, 0f, 2100)
-        assertFalse(result.complete)
-        assertEquals(0, result.accepted)
+        val driver = Driver(enrolling = false, template = reference.encode())
+        driver.align(a)
+        driver.blink(vector = a)
+        val switched = driver.frame(vector = b)
+        assertFalse(switched.complete)
+        assertEquals(0, switched.accepted)
+        assertEquals(FaceStage.Align, driver.session.currentStage)
     }
 
-    @Test fun multipleFacesAndIdentitySignalsResetEveryPartialChallenge() {
-        for (enrolling in listOf(true, false)) {
-            for (message in listOf("Multiple faces", "Wrong person")) {
-                for (count in listOf(1, 4, 6)) {
-                    val driver = Driver(enrolling)
-                    val yaws = listOf(0f, 0f, driver.turnYaw, driver.turnYaw, 0f, 0f)
-                    repeat(count) { driver.frame(yaws[it]) }
-                    val rejected = driver.reject(FaceInterruption.Identity, delta = 50, message = message)
-                    assertEquals(message, rejected.message)
-                    assertEquals(0, rejected.accepted)
-                    assertFalse(rejected.complete)
-                    assertNull(rejected.template)
-                    driver.challenge()
-                }
+    @Test fun lookingAwayCannotAnchorTheCheck() {
+        val driver = Driver()
+        for (yaw in listOf(0.30f, -0.30f, 1.2f, -2f)) {
+            val away = driver.frame(yaw = yaw)
+            assertEquals(0, away.accepted)
+            assertEquals(FaceCopy.LOOK, away.message)
+        }
+        assertEquals(1, driver.frame().accepted)
+    }
+
+    @Test fun nonFiniteYawResetsInsteadOfCounting() {
+        for (yaw in listOf(Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY)) {
+            val driver = Driver()
+            assertEquals(0, driver.frame(yaw = yaw).accepted)
+            assertEquals("A usable frame after a broken one must still count",
+                1, driver.frame().accepted)
+        }
+    }
+
+    @Test fun invalidEmbeddingsNeverBecomeSamplesOrATemplate() {
+        assertEveryCase(
+            listOf(emptyList(), List(127) { 0f }, List(129) { 0f }, axis(magnitude = 0f),
+                axis(magnitude = 2f), axis(magnitude = Float.NaN),
+                axis(magnitude = Float.POSITIVE_INFINITY))
+        ) { invalid ->
+            for (enrolling in listOf(true, false)) {
+                val driver = Driver(enrolling)
+                driver.align()
+                driver.blink()
+                val result = driver.frame(vector = invalid)
+                assertFalse("Invalid embedding must not finish a check", result.complete)
+                assertNull(result.template)
+                assertEquals(0, result.accepted)
+                assertEquals(FaceStage.Align, driver.session.currentStage)
             }
         }
     }
 
-    @Test fun transientFaceLossAndPadRejectionsKeepCollectedEvidence() {
-        for (failure in listOf(FaceInterruption.FaceLost, FaceInterruption.Pad)) {
-            for (enrolling in listOf(true, false)) {
-                val driver = Driver(enrolling)
-                driver.enterFinalStage()
-                driver.frame()
-                val stalled = driver.reject(failure, message = "Transient $failure")
+    @Test fun framesCloserThanTheSpacingDoNotDoubleCount() {
+        val driver = Driver()
+        assertEquals(1, driver.frame().accepted)
+        assertEquals(1, driver.frame(delta = 349).accepted)
+        assertEquals(2, driver.frame(delta = 1).accepted)
+        driver.blink()
+        assertFalse(driver.frame(delta = 349).complete)
+        assertFalse(driver.frame(delta = 1).complete)
+        assertTrue(driver.frame(delta = 350).complete)
+    }
+
+    @Test fun repeatedTimestampsCannotAccumulateEvidence() {
+        val driver = Driver()
+        driver.frame()
+        repeat(10) { assertEquals(1, driver.frame(delta = 0).accepted) }
+        assertTrue(driver.challenge().complete)
+    }
+
+    @Test fun transientFaceLossKeepsTheBlinkAndTheSamples() {
+        for (enrolling in listOf(true, false)) {
+            val driver = Driver(enrolling)
+            driver.align()
+            driver.blink()
+            repeat(FaceCheckSession.FACE_LOST_FRAMES - 1) {
+                val stalled = driver.reject(FaceInterruption.FaceLost, message = FaceCopy.FACE_LOST)
                 assertFalse(stalled.complete)
                 assertNull(stalled.template)
                 if (enrolling) assertEquals(3, stalled.accepted)
-                assertFalse(driver.frame().complete)
-                val result = driver.frame()
-                assertTrue("One dropped frame must not restart the challenge", result.complete)
-                if (enrolling) assertEquals(5, FaceTemplate.decode(result.template)!!.samples.size)
             }
+            assertFalse(driver.frame().complete)
+            assertTrue("Dropped frames must not restart the challenge", driver.frame().complete)
         }
     }
 
-    @Test fun sustainedFaceLossResetsAfterFourConsecutiveFrames() {
-        for (enrolling in listOf(true, false)) {
-            val surviving = Driver(enrolling)
-            surviving.enterFinalStage()
-            surviving.frame()
-            repeat(FaceCheckSession.FACE_LOST_FRAMES - 1) { surviving.reject(FaceInterruption.FaceLost) }
-            assertFalse(surviving.frame().complete)
-            assertTrue(surviving.frame().complete)
-
-            val resetting = Driver(enrolling)
-            resetting.enterFinalStage()
-            resetting.frame()
-            var last: FaceCheckProgress? = null
-            repeat(FaceCheckSession.FACE_LOST_FRAMES) { last = resetting.reject(FaceInterruption.FaceLost) }
-            assertEquals(0, last!!.accepted)
-            val restarted = resetting.frame()
-            assertFalse(restarted.complete)
-            if (enrolling) assertEquals(1, restarted.accepted)
-        }
-    }
-
-    @Test fun sustainedPadRejectionsResetAfterThreeConsecutiveFrames() {
+    @Test fun sustainedFaceLossRestartsTheWholeCheck() {
         for (enrolling in listOf(true, false)) {
             val driver = Driver(enrolling)
-            driver.enterFinalStage()
-            driver.frame()
-            repeat(FaceCheckSession.PAD_FRAMES - 1) {
-                val surviving = driver.reject(FaceInterruption.Pad)
-                assertFalse(surviving.complete)
-                if (enrolling) assertEquals(3, surviving.accepted)
+            driver.align()
+            driver.blink()
+            var last: FaceCheckProgress? = null
+            repeat(FaceCheckSession.FACE_LOST_FRAMES) {
+                last = driver.reject(FaceInterruption.FaceLost, message = FaceCopy.FACE_LOST)
             }
-            assertEquals(0, driver.reject(FaceInterruption.Pad).accepted)
-            val restarted = driver.frame()
-            assertFalse(restarted.complete)
-            if (enrolling) assertEquals(1, restarted.accepted)
+            assertEquals(0, last!!.accepted)
+            assertEquals(FaceStage.Align, driver.session.currentStage)
+            assertTrue(driver.challenge().complete)
         }
     }
 
-    @Test fun faceLostAndPadStreaksDoNotLeakIntoEachOther() {
+    @Test fun aSpoofFrameInMidBurstDiscardsOnlyThePostBlinkSamples() {
         val driver = Driver()
-        driver.enterFinalStage()
-        driver.frame()
+        driver.align()
+        driver.blink()
+        assertEquals(4, driver.frame().accepted)
+        val pad = driver.reject(FaceInterruption.Pad, message = FaceCopy.LIVE_FACE)
+        assertFalse(pad.complete)
+        assertNull(pad.template)
+        assertEquals(2, pad.accepted)
+        assertEquals(FaceStage.Blink, driver.session.currentStage)
+        driver.blink()
+        assertTrue(driver.capture().complete)
+    }
+
+    @Test fun sustainedSpoofFramesResetTheCheck() {
+        for (enrolling in listOf(true, false)) {
+            val driver = Driver(enrolling)
+            driver.align()
+            driver.blink()
+            var last: FaceCheckProgress? = null
+            repeat(FaceCheckSession.PAD_FRAMES) { last = driver.reject(FaceInterruption.Pad) }
+            assertEquals(0, last!!.accepted)
+            assertEquals(FaceStage.Align, driver.session.currentStage)
+            assertTrue(driver.challenge().complete)
+        }
+    }
+
+    @Test fun faceLossAndSpoofStreaksDoNotLeakIntoEachOther() {
+        val driver = Driver()
+        driver.align()
         repeat(FaceCheckSession.FACE_LOST_FRAMES - 1) { driver.reject(FaceInterruption.FaceLost) }
         repeat(FaceCheckSession.PAD_FRAMES - 1) { driver.reject(FaceInterruption.Pad) }
         driver.reject(FaceInterruption.FaceLost)
-        driver.reject(FaceInterruption.Pad)
-        assertEquals(4, driver.frame().accepted)
-        assertTrue(driver.frame().complete)
+        val stillAlive = driver.reject(FaceInterruption.Pad)
+        assertEquals("Neither streak alone is long enough to erase the alignment",
+            2, stillAlive.accepted)
+        assertEquals(FaceStage.Blink, driver.session.currentStage)
+        driver.blink()
+        assertTrue(driver.capture().complete)
     }
 
     @Test fun rejectedQualityFrameNeverAddsSamplesOrCompletes() {
         val driver = Driver()
-        driver.enterFinalStage()
-        driver.frame()
-        val result = driver.reject(message = "Blurred frame")
+        driver.align()
+        driver.blink()
+        val result = driver.reject(message = FaceCopy.TOO_BLURRY)
         assertEquals(3, result.accepted)
         assertFalse(result.complete)
         assertNull(result.template)
     }
 
     @Test fun prolongedQualityRejectionsDoNotErodeContinuity() {
-        for (enrolling in listOf(true, false)) {
+        assertEveryCase(listOf(true, false)) { enrolling ->
             val driver = Driver(enrolling)
-            driver.enterFinalStage()
-            driver.frame()
-            driver.frame()
-            // Real phones take a second or more per frame while the user settles into position.
-            repeat(8) { assertFalse(driver.reject(delta = 900).complete) }
-            val result = driver.frame(delta = 900)
-            assertEquals(5, result.accepted)
-            assertTrue("Quality rejections must not restart a challenge in progress", result.complete)
+            driver.align()
+            driver.blink()
+            // Real phones take several frames while the user settles; that must not restart anything.
+            repeat(6) { assertFalse(driver.reject(delta = 400).complete) }
+            assertTrue("Quality rejections must not restart a challenge in progress",
+                driver.capture().complete)
         }
     }
 
-    @Test fun slowPhoneCadenceStillCompletesWithoutRestarting() {
+    @Test fun continuityGapLongerThanPresenceGapRestartsTheCheck() {
         for (enrolling in listOf(true, false)) {
             val driver = Driver(enrolling)
-            val frames = (1..7).map {
-                driver.frame(if (it in 3..4) driver.turnYaw else 0f, delta = 1500)
-            }
-            assertTrue(frames.dropLast(1).none { it.complete })
-            val result = frames.last()
-            assertTrue(result.complete)
-            assertEquals(5, result.accepted)
-            if (enrolling) assertEquals(5, FaceTemplate.decode(result.template)!!.samples.size)
-        }
-    }
-
-    @Test fun continuityGapLongerThanPresenceGapRestartsChallenge() {
-        for (enrolling in listOf(true, false)) {
-            val driver = Driver(enrolling)
-            driver.enterFinalStage()
+            driver.align()
+            driver.blink()
             driver.frame()
-            driver.frame()
-            val next = driver.frame(delta = FaceCheckSession.PRESENCE_GAP_MS + 1)
-            assertFalse(next.complete)
-            assertEquals(1, next.accepted)
-            driver.frame()
-            driver.frame(driver.turnYaw)
-            driver.frame(driver.turnYaw)
-            driver.finish()
+            val gone = driver.frame(delta = FaceCheckSession.PRESENCE_GAP_MS + 1)
+            assertFalse(gone.complete)
+            if (enrolling) assertEquals(1, gone.accepted)
+            assertEquals(FaceStage.Align, driver.session.currentStage)
+            assertTrue(driver.challenge().complete)
         }
     }
 
     @Test fun continuityGapOfExactlyThePresenceGapIsAllowed() {
         val driver = Driver()
-        driver.enterFinalStage()
-        driver.frame()
-        driver.frame()
-        assertTrue(driver.frame(delta = FaceCheckSession.PRESENCE_GAP_MS).complete)
+        assertEquals(1, driver.frame().accepted)
+        val held = driver.frame(delta = FaceCheckSession.PRESENCE_GAP_MS)
+        assertEquals("A gap of exactly the limit is still the same person", 2, held.accepted)
+        assertEquals(FaceStage.Blink, driver.session.currentStage)
     }
 
-    @Test fun timeoutCannotCompleteEvenWhenOnlyOneFrameRemains() {
+    @Test fun timeoutCannotCompleteEvenWhenOneFrameRemains() {
         for (enrolling in listOf(true, false)) {
             val driver = Driver(enrolling)
-            driver.now = driver.startedAt + FaceCheckSession.TIMEOUT_MS - 2100
-            driver.enterFinalStage()
-            driver.frame()
-            driver.frame()
-            val timedOut = driver.frame(delta = 351)
+            driver.now = driver.startedAt + FaceCheckSession.TIMEOUT_MS - 1_500
+            driver.align()
+            driver.blink()
+            assertFalse(driver.frame().complete)
+            val timedOut = driver.frame(delta = 350)
             assertFalse(timedOut.complete)
             assertNull(timedOut.template)
-            assertTrue(timedOut.message.contains("timed out", ignoreCase = true))
+            assertTrue(timedOut.message.english.contains("timed out", ignoreCase = true))
             repeat(8) { assertFalse(driver.frame().complete) }
         }
     }
 
-    @Test fun invalidEnrollmentVectorsDoNotBecomeInitialSamples() {
-        assertEveryCase(listOf(emptyList(), List(127) { 0f }, List(129) { 0f },
-            axis(magnitude = 0f), axis(magnitude = 2f), axis(magnitude = Float.NaN),
-            axis(magnitude = Float.POSITIVE_INFINITY))) { invalid ->
-            val driver = Driver()
-            val result = driver.frame(vector = invalid)
-            assertFalse(result.complete)
-            assertEquals("Invalid embedding must not be accepted", 0, result.accepted)
-        }
+    @Test fun aCompletedCheckReportsHowDecisiveTheBlinkWas() {
+        val driver = Driver()
+        assertTrue(driver.challenge().complete)
+        assertTrue("Peak closure must clear the threshold by a real margin",
+            driver.session.blinkMargin > 0.2f)
     }
 
-    @Test fun invalidFinalEmbeddingCannotProduceInvalidCompletedTemplate() {
-        assertEveryCase(listOf(emptyList(), List(127) { 0f }, List(129) { 0f },
-            axis(magnitude = 0f), axis(magnitude = 2f), axis(magnitude = Float.NaN),
-            axis(magnitude = Float.POSITIVE_INFINITY))) { invalid ->
-            val driver = Driver()
-            driver.enterFinalStage()
-            driver.frame()
-            driver.frame()
-            val result = driver.frame(vector = invalid)
-            assertFalse("Invalid embedding must not finish enrollment", result.complete)
-            assertNull(result.template)
-        }
-    }
-
-    @Test fun invalidEmbeddingDuringVerificationResetsWithoutCompleting() {
-        assertEveryCase(listOf(emptyList(), List(127) { 0f }, List(129) { 0f },
-            axis(magnitude = 0f), axis(magnitude = 2f), axis(magnitude = Float.NaN),
-            axis(magnitude = Float.POSITIVE_INFINITY))) { invalid ->
-            val driver = Driver(enrolling = false)
-            driver.enterFinalStage()
-            driver.frame()
-            driver.frame()
-            val result = driver.frame(vector = invalid)
-            assertFalse(result.complete)
-            assertEquals(0, result.accepted)
-            assertFalse(driver.frame().complete)
-        }
-    }
-
-    @Test fun nonFiniteInitialYawCannotCountAsCenteredEvidence() {
-        assertEveryCase(listOf(Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY)) { yaw ->
-            val driver = Driver()
-            val result = driver.frame(yaw)
-            assertFalse(result.complete)
-            assertEquals("Non-finite yaw must not count", 0, result.accepted)
-        }
-    }
-
-    @Test fun nonFiniteFinalYawCannotCompleteEnrollmentOrVerification() {
-        val cases = listOf(true, false).flatMap { enrolling ->
-            listOf(Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY).map { enrolling to it }
-        }
-        assertEveryCase(cases) { (enrolling, yaw) ->
+    @Test fun aFinishedCheckKeepsReportingCompletion() {
+        for (enrolling in listOf(true, false)) {
             val driver = Driver(enrolling)
-            driver.enterFinalStage()
-            driver.frame()
-            driver.frame()
-            assertFalse("Non-finite yaw cannot complete", driver.frame(yaw).complete)
+            val result = driver.challenge()
+            assertTrue(result.complete)
+            assertEquals(enrolling, result.template != null)
+            // Later frames are the camera still running: completion is handed over once only.
+            repeat(4) {
+                val again = driver.frame()
+                assertTrue(again.complete)
+                assertEquals(FaceCopy.COMPLETE, again.message)
+                assertNull(again.template)
+            }
+        }
+    }
+
+    @Test fun guidanceVocabularyIsAlwaysBilingualAndShort() {
+        // Lines an employee has to act on while holding a phone: one breath each.
+        val guidance = listOf(
+            FaceCopy.LOOK, FaceCopy.BLINK_NOW, FaceCopy.KEEP_LOOKING, FaceCopy.COMPLETE,
+            FaceCopy.TIMED_OUT, FaceCopy.UNREADABLE, FaceCopy.NO_MATCH, FaceCopy.ONE_PERSON,
+            FaceCopy.TWO_FACES, FaceCopy.FACE_LOST, FaceCopy.MOVE_CLOSER, FaceCopy.MOVE_BACK,
+            FaceCopy.FACE_IN_FRAME, FaceCopy.UPRIGHT, FaceCopy.EYE_LEVEL, FaceCopy.TOO_DARK,
+            FaceCopy.TOO_BRIGHT, FaceCopy.FLAT_LIGHT, FaceCopy.TOO_BLURRY, FaceCopy.LIVE_FACE,
+            FaceCopy.IDLE, FaceCopy.READY_TO_START
+        )
+        // Lines that end the check and go to a supervisor, so they may name the problem.
+        val failures = listOf(
+            FaceCopy.ENGINE_UNAVAILABLE, FaceCopy.CAMERA_FAILED, FaceCopy.MODEL_FAILED,
+            FaceCopy.PROCESSING_FAILED
+        )
+        assertEveryCase(guidance + failures) { line ->
+            assertTrue(line.english.isNotBlank())
+            assertTrue(line.hindi.isNotBlank())
+        }
+        assertEveryCase(guidance) { line ->
+            assertTrue("One readable line for a field employee: ${line.english}",
+                line.english.length <= 52)
+        }
+    }
+
+    @Test fun guidanceNeverAsksForAHeadMovement() {
+        val driver = Driver()
+        val seen = mutableListOf(
+            driver.frame().message,
+            driver.frame(framing = FramingReason.TooFar, delta = 900).message,
+            driver.frame(framing = FramingReason.TooFar, delta = 900).message,
+            driver.reject(FaceInterruption.Pad, message = FaceCopy.LIVE_FACE).message,
+            driver.challenge().message
+        )
+        assertEveryCase(seen) { line ->
+            for (banned in listOf("turn", "tilt your head", "nod", "shake")) {
+                assertFalse("Guidance must not ask for a head movement: ${line.english}",
+                    line.english.contains(banned, ignoreCase = true))
+            }
         }
     }
 }

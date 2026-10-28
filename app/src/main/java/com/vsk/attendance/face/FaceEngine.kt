@@ -24,7 +24,7 @@ import kotlin.math.hypot
 import kotlin.math.min
 
 internal data class FaceObservation(
-    val issue: String? = null,
+    val issue: FaceInstruction? = null,
     val vector: List<Float> = emptyList(),
     val yaw: Float = 0f,
     val interruption: FaceInterruption = FaceInterruption.Quality
@@ -66,10 +66,10 @@ internal class FaceEngine private constructor(context: Context) {
             detector.setInputSize(bgr.size())
             detector.detect(bgr, faces)
             if (faces.rows() == 0) return FaceObservation(
-                "Put your face in the camera frame", interruption = FaceInterruption.FaceLost
+                FaceCopy.FACE_LOST, interruption = FaceInterruption.FaceLost
             )
             if (faces.rows() > 1) return FaceObservation(
-                "Only one person should be in view", interruption = FaceInterruption.Identity
+                FaceCopy.TWO_FACES, interruption = FaceInterruption.Identity
             )
             val points = FloatArray(15)
             faces.get(0, 0, points)
@@ -77,34 +77,36 @@ internal class FaceEngine private constructor(context: Context) {
             val y = points[1]
             val width = points[2]
             val height = points[3]
-            if (width < 90 || height < 110 || width < bitmap.width * 0.18f) {
-                return FaceObservation("Move closer to the camera")
+            // Floors track FaceGeometry's mesh-based guidance so a frame the employee was told to be
+            // ready for is never then thrown away by a stricter second opinion.
+            if (width < 85 || height < 100 || width < bitmap.width * 0.15f) {
+                return FaceObservation(FaceCopy.MOVE_CLOSER)
             }
-            if (width > bitmap.width * 0.72f || height > bitmap.height * 0.82f) {
-                return FaceObservation("Move the phone a little farther away")
+            if (width > bitmap.width * 0.78f || height > bitmap.height * 0.88f) {
+                return FaceObservation(FaceCopy.MOVE_BACK)
             }
-            if (x < 6 || y < 6 || x + width > bitmap.width - 6 || y + height > bitmap.height - 6) {
-                return FaceObservation("Keep your whole face inside the frame")
+            if (x < 4 || y < 4 || x + width > bitmap.width - 4 || y + height > bitmap.height - 4) {
+                return FaceObservation(FaceCopy.FACE_IN_FRAME)
             }
             val dx = points[6] - points[4]
             val dy = points[7] - points[5]
             val eyeDistance = hypot(dx, dy)
-            if (eyeDistance < 32) return FaceObservation("Move closer and look toward the camera")
+            if (eyeDistance < 24) return FaceObservation(FaceCopy.MOVE_CLOSER)
             val roll = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble()))
-            if (abs(roll) > 17) return FaceObservation("Hold your phone upright and keep your head level")
+            if (abs(roll) > FaceGeometry.ROLL_MAX_DEGREES) return FaceObservation(FaceCopy.UPRIGHT)
             val nx = points[8] - (points[4] + points[6]) / 2
             val ny = points[9] - (points[5] + points[7]) / 2
             val yaw = (nx * dx + ny * dy) / (eyeDistance * eyeDistance)
             val pitch = (ny * dx - nx * dy) / (eyeDistance * eyeDistance)
-            if (abs(yaw) > 0.6f || pitch !in 0.05f..1.05f) {
-                return FaceObservation("Hold the phone at eye level; turn only slightly")
+            if (abs(yaw) > 0.6f || pitch !in 0.02f..1.10f) {
+                return FaceObservation(FaceCopy.EYE_LEVEL)
             }
             val row = faces.row(0)
             try { recognizer.alignCrop(bgr, row, aligned) } finally { row.release() }
             qualityIssue(aligned)?.let { return FaceObservation(it) }
             if (liveProbability(bgr, x, y, width, height) < 0.8f) {
                 return FaceObservation(
-                    "Use your live face in even light, without a photo or screen",
+                    FaceCopy.LIVE_FACE,
                     interruption = FaceInterruption.Pad
                 )
             }
@@ -113,7 +115,7 @@ internal class FaceEngine private constructor(context: Context) {
             val raw = FloatArray(FaceTemplate.DIMENSIONS)
             feature.get(0, 0, raw)
             val vector = FaceTemplate.normalized(raw.toList())
-                ?: return FaceObservation("Face could not be read. Improve lighting and retry.")
+                ?: return FaceObservation(FaceCopy.UNREADABLE)
             return FaceObservation(vector = vector, yaw = yaw)
         } finally {
             feature.release()
@@ -124,7 +126,7 @@ internal class FaceEngine private constructor(context: Context) {
         }
     }
 
-    private fun qualityIssue(aligned: Mat): String? {
+    private fun qualityIssue(aligned: Mat): FaceInstruction? {
         val gray = Mat()
         val laplacian = Mat()
         val mean = MatOfDouble()
@@ -133,13 +135,13 @@ internal class FaceEngine private constructor(context: Context) {
             Imgproc.cvtColor(aligned, gray, Imgproc.COLOR_BGR2GRAY)
             Core.meanStdDev(gray, mean, deviation)
             val brightness = mean.toArray()[0]
-            if (brightness < 38) return "Face a light source; your face is too dark"
-            if (brightness > 228) return "Move away from harsh light or direct sunlight"
-            if (deviation.toArray()[0] < 11) return "Use even lighting and clean the front camera"
+            if (brightness < 38) return FaceCopy.TOO_DARK
+            if (brightness > 228) return FaceCopy.TOO_BRIGHT
+            if (deviation.toArray()[0] < 11) return FaceCopy.FLAT_LIGHT
             Imgproc.Laplacian(gray, laplacian, CvType.CV_64F)
             Core.meanStdDev(laplacian, mean, deviation)
             val sharpness = deviation.toArray()[0]
-            if (sharpness * sharpness < 18) return "Hold still and clean the front camera lens"
+            if (sharpness * sharpness < 18) return FaceCopy.TOO_BLURRY
             return null
         } finally {
             deviation.release()

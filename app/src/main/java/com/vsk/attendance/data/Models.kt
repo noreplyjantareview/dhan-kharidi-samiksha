@@ -51,7 +51,6 @@ data class FaceCheckResult(
     val error: String? = null,
     val reason: String? = null,
     @SerialName("challenge_id") val challengeId: String? = null,
-    val turn: String? = null,
     @SerialName("expires_in") val expiresIn: Int = 90,
     @SerialName("face_revision") val faceRevision: String? = null
 )
