@@ -253,11 +253,7 @@ private class FaceAnalyzer(
             lastFrameAt = now
             val current = session ?: return
             base = image.toBitmap()
-            val rotation = image.imageInfo.rotationDegrees
-            upright = if (rotation == 0) base else Bitmap.createBitmap(
-                base, 0, 0, base.width, base.height,
-                Matrix().apply { postRotate(rotation.toFloat()) }, true
-            )
+            upright = usableFrame(base, image.imageInfo.rotationDegrees)
             val model = checkNotNull(guide) { "Face guidance model is not loaded." }
             val engineModel = checkNotNull(engine) { "Face engine is not loaded." }
             val seen = model.read(upright, now)
@@ -315,6 +311,29 @@ private class FaceAnalyzer(
 
         const val TAG = "FaceCheck"
     }
+}
+
+/**
+ * Both models insist on a 32-bit RGBA frame: OpenCV asserts it inside `bitmap2Mat`, and the camera
+ * does not always deliver one at the requested format. A frame that is not ARGB_8888 is converted
+ * before inference instead of being fed in and trusted.
+ *
+ * Returns either [source] itself or a new bitmap that the caller must recycle; it never recycles
+ * anything itself, so the caller's cleanup stays the single owner of both bitmaps.
+ */
+private fun usableFrame(source: Bitmap, rotation: Int): Bitmap {
+    // A recycled frame reaches the same native assert as a wrong pixel format, so keep them apart.
+    if (source.isRecycled) throw IllegalStateException("Face frame was recycled before inference.")
+    val upright = if (rotation == 0) source else Bitmap.createBitmap(
+        source, 0, 0, source.width, source.height,
+        Matrix().apply { postRotate(rotation.toFloat()) }, true
+    )
+    if (upright.config == Bitmap.Config.ARGB_8888) return upright
+    val converted = checkNotNull(upright.copy(Bitmap.Config.ARGB_8888, false)) {
+        "Face frame format is unusable."
+    }
+    if (upright !== source) upright.recycle()
+    return converted
 }
 
 /** A cause line is truncated, and the instruction plus that tag is then kept under the screen limit. */

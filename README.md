@@ -96,6 +96,10 @@ as absent pulses. Geofence math and windows are enforced server-side.
   actually threw.
 - **Recognition only when it helps:** the heavy OpenCV pass runs only on frames whose eyes are open
   and whose face is framed, so a check costs about five recognition runs instead of dozens.
+- **Every frame is normalized first:** OpenCV asserts an RGBA_8888 bitmap inside `bitmap2Mat`, and a
+  camera does not always deliver the requested pixel format, so each frame is rotated into an
+  ARGB_8888 bitmap before either model sees it. A frame that arrives already recycled is reported as
+  such instead of surfacing the same native assert.
 - **No face photos are saved or uploaded.** Frames and crops exist only in memory. The mesh model is
   guidance only: it produces no identity and nothing from it is stored. Numeric templates
   are still sensitive biometric data: they are stored in the protected staff record and encrypted
@@ -417,8 +421,11 @@ Early present pulse + many absent pulses = "came, then left." No check-in + no p
 - Dashboard activation/reset, failure/retry, narrow layouts, assignments and bulk-upload browser
   regressions passed in isolated preview mode, with production API access blocked.
 - Full APK compilation, Android ARM/JNI execution, camera UI and real-person/attack validation remain
-  required on physical phones. `FaceCaptureCard.kt` (CameraX + Compose) has no local compiler here, so
-  CI is its first real build. The current CI build workflow does not run JVM tests automatically;
+  required on physical phones. `FaceCaptureCard.kt`'s Compose half has no local compiler here (it needs
+  the Compose plugin), so CI is its first real build; its `FaceAnalyzer` region and file-level helpers
+  are sliced verbatim out of that same file and signature-compiled locally against Android/CameraX
+  stubs plus the real OpenCV and MediaPipe classes, because two analyzer edits shipped broken before
+  that check existed. The current CI build workflow does not run JVM tests automatically;
   run the test command as part of release validation before distributing the APK.
 - Attendance tracking is **foreground only** (app open). Working with the app closed needs Android
   background-location permission + a foreground service + battery-optimization handling.
