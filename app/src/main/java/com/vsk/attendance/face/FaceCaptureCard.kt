@@ -3,6 +3,7 @@ package com.vsk.attendance.face
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.os.SystemClock
+import android.util.Log
 import android.util.Size
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -15,8 +16,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,16 +36,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import com.vsk.attendance.BuildConfig
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
+/**
+ * Live face check screen. There is deliberately no button: the camera opens, the guidance starts on
+ * its own and the check runs until a blink completes it, exactly like the browser prototype the
+ * blink flow was validated on. Field staff could not find, read and press a button in time.
+ */
 @Composable
 fun FaceCaptureCard(
     enrolling: Boolean,
     template: String? = null,
     enabled: Boolean = true,
-    buttonColor: Color = Color(0xFF1D4ED8),
     onComplete: (String?) -> Unit,
     onError: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -64,22 +68,21 @@ fun FaceCaptureCard(
     var instruction by remember { mutableStateOf(FaceCopy.IDLE) }
     var accepted by remember { mutableStateOf(0) }
     var ready by remember { mutableStateOf(false) }
-    var running by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf(false) }
     var controller by remember { mutableStateOf<FaceAnalyzer?>(null) }
 
-    SideEffect { controller?.enabled?.set(enabled) }
+    SideEffect { controller?.setEnabled(enabled) }
     DisposableEffect(context, lifecycleOwner, enrolling, template) {
         ready = false
-        running = false
+        failed = false
         val main = ContextCompat.getMainExecutor(context)
         val analyzer = FaceAnalyzer(
             main = main,
             enrolling = enrolling,
             template = template,
             onProgress = { text, samples -> instruction = text; accepted = samples },
-            onRunning = { running = it },
             onComplete = { completion(it) },
-            onError = { error(it) }
+            onError = { message -> failed = true; error(message) }
         )
         analyzer.enabled.set(enabled)
         controller = analyzer
@@ -92,8 +95,8 @@ fun FaceCaptureCard(
         var provider: ProcessCameraProvider? = null
         analyzer.executor.execute {
             try {
-                // The mesh model drives the guidance, so it is loaded and warmed before the employee
-                // presses Start; the heavier recognition pass then only runs on evidence frames.
+                // The mesh model drives the guidance, so it is loaded and warmed before the first
+                // frame; the heavier recognition pass then only runs on evidence frames.
                 analyzer.guide = FaceGuide.get(context).apply { warmUp() }
                 analyzer.engine = FaceEngine.get(context)
                 val future = ProcessCameraProvider.getInstance(context)
@@ -104,23 +107,16 @@ fun FaceCaptureCard(
                             analysis.setAnalyzer(analyzer.executor, analyzer)
                             provider!!.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_FRONT_CAMERA, preview, analysis)
                             ready = true
-                            analyzer.publish(FaceCopy.READY_TO_START, 0)
-                        } catch (_: Exception) {
-                            analyzer.publish(FaceCopy.CAMERA_FAILED, 0)
-                            analyzer.reportError(FaceCopy.CAMERA_FAILED)
+                            analyzer.cameraReady()
+                        } catch (e: Exception) {
+                            analyzer.hardFail(FaceCopy.CAMERA_FAILED, e)
                         }
                     }
                 }, main)
-            } catch (_: Exception) {
-                analyzer.post {
-                    analyzer.publish(FaceCopy.MODEL_FAILED, 0)
-                    analyzer.reportError(FaceCopy.MODEL_FAILED)
-                }
-            } catch (_: LinkageError) {
-                analyzer.post {
-                    analyzer.publish(FaceCopy.ENGINE_UNAVAILABLE, 0)
-                    analyzer.reportError(FaceCopy.ENGINE_UNAVAILABLE)
-                }
+            } catch (e: Exception) {
+                analyzer.hardFail(FaceCopy.MODEL_FAILED, e)
+            } catch (e: LinkageError) {
+                analyzer.hardFail(FaceCopy.ENGINE_UNAVAILABLE, e)
             }
         }
         onDispose {
@@ -142,29 +138,17 @@ fun FaceCaptureCard(
             fontWeight = FontWeight.SemiBold
         )
         Text(instruction.hindi, color = Color(0xFF475569), fontSize = 15.sp)
-        if (!ready || running) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-        Button(
-            onClick = { controller?.start() },
-            enabled = enabled && ready && !running,
-            colors = ButtonDefaults.buttonColors(containerColor = buttonColor),
-            modifier = Modifier.fillMaxWidth().height(60.dp)
-        ) {
-            Column {
-                Text(
-                    if (running) "Checking face…" else if (enrolling) "Start face registration" else "Start face check"
-                )
-                Text(
-                    if (running) "जाँच हो रही है…" else if (enrolling) "दर्ज शुरू करें" else "जाँच शुरू करें",
-                    fontSize = 12.sp
-                )
-            }
-        }
+        if (!ready && !failed) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         Text(
-            "Images are processed on this phone only. No face photos are saved or uploaded.",
+            "The check runs by itself. Images are processed on this phone only. " +
+                "No face photos are saved or uploaded.",
             fontSize = 12.sp, color = Color(0xFF64748B)
         )
-        Text("छवियाँ केवल इसी फ़ोन पर जाँची जाती हैं। चेहरे की फ़ोटो नहीं सहेजी या भेजी जाती है।",
-            fontSize = 12.sp, color = Color(0xFF64748B))
+        Text(
+            "जाँच अपने आप चलती है। छवियाँ केवल इसी फ़ोन पर जाँची जाती हैं। " +
+                "चेहरे की फ़ोटो नहीं सहेजी या भेजी जाती है।",
+            fontSize = 12.sp, color = Color(0xFF64748B)
+        )
     }
 }
 
@@ -173,36 +157,83 @@ private class FaceAnalyzer(
     private val enrolling: Boolean,
     private val template: String?,
     private val onProgress: (FaceInstruction, Int) -> Unit,
-    private val onRunning: (Boolean) -> Unit,
     private val onComplete: (String?) -> Unit,
     private val onError: (String) -> Unit
 ) : ImageAnalysis.Analyzer {
     val executor = Executors.newSingleThreadExecutor()
     val closed = AtomicBoolean(false)
     val enabled = AtomicBoolean(true)
-    private val running = AtomicBoolean(false)
     var guide: FaceGuide? = null
     var engine: FaceEngine? = null
-    private var session: FaceCheckSession? = null
+    @Volatile private var ready = false
+    private val running = AtomicBoolean(false)
+
+    /** Once a hard failure is reported the card is dead until it is recreated; no error loop. */
+    private val stopped = AtomicBoolean(false)
+    @Volatile private var session: FaceCheckSession? = null
     private var deadline = 0L
     private var lastFrameAt = 0L
+    private var frameFailures = 0
+    private var windowRestarts = 0
 
-    fun start() {
-        if (closed.get() || !enabled.get() || !running.compareAndSet(false, true)) return
-        onRunning(true)
+    /** Called from the UI once the camera is bound, and whenever the parent re-enables the card. */
+    fun setEnabled(on: Boolean) {
+        if (enabled.getAndSet(on) == on) return
         executor.execute {
-            try {
-                val now = SystemClock.elapsedRealtime()
-                session = FaceCheckSession(enrolling, template, now)
-                deadline = now + FaceCheckSession.TIMEOUT_MS
-                publish(FaceCopy.LOOK, 0)
-            } catch (e: IllegalArgumentException) {
-                fail(FaceInstruction(
-                    e.message ?: "Face registration is not current. Ask your administrator for a reset.",
-                    "चेहरा दर्ज नहीं है। प्रशासक से रीसेट माँगें"
-                ))
-            }
+            if (on) { if (ready && !running.get() && !stopped.get()) begin() } else stop()
         }
+    }
+
+    fun cameraReady() {
+        ready = true
+        executor.execute { if (enabled.get() && !running.get() && !stopped.get()) begin() }
+    }
+
+    private fun publish(instruction: FaceInstruction, accepted: Int) =
+        post { onProgress(instruction, accepted) }
+
+    /**
+     * Stops the check for good and says why. A field failure that only says "try again" is the bug
+     * this replaces: debug builds carry the real cause so one screenshot is enough to fix it.
+     */
+    fun hardFail(instruction: FaceInstruction, cause: Throwable) {
+        Log.e(TAG, "face check stopped: $instruction", cause)
+        stopped.set(true)
+        enabled.set(false)
+        stop()
+        val shown = instruction.withCause(cause)
+        post {
+            onProgress(shown, 0)
+            onError(shown.english)
+        }
+    }
+
+    private fun post(action: () -> Unit) = main.execute { if (!closed.get()) action() }
+
+    private fun begin() {
+        val now = SystemClock.elapsedRealtime()
+        session = try {
+            FaceCheckSession(enrolling, template, now)
+        } catch (e: IllegalArgumentException) {
+            hardFail(
+                FaceInstruction(
+                    e.message ?: "Face registration is not current. Ask your administrator",
+                    "चेहरा दर्ज नहीं है। प्रशासक से रीसेट माँगें"
+                ), e
+            )
+            return
+        }
+        deadline = now + FaceCheckSession.TIMEOUT_MS
+        frameFailures = 0
+        running.set(true)
+        publish(
+            if (windowRestarts >= SLOW_AFTER_WINDOWS) FaceCopy.SLOW else FaceCopy.READY_TO_START, 0
+        )
+    }
+
+    private fun stop() {
+        running.set(false)
+        session = null
     }
 
     override fun analyze(image: ImageProxy) {
@@ -210,13 +241,17 @@ private class FaceAnalyzer(
         var upright: Bitmap? = null
         try {
             val now = SystemClock.elapsedRealtime()
-            if (closed.get() || !enabled.get() || !running.get() || now - lastFrameAt < FRAME_INTERVAL_MS) return
-            val current = session ?: return
+            if (closed.get() || !enabled.get() || !running.get()) return
+            if (now - lastFrameAt < FRAME_INTERVAL_MS) return
             if (now > deadline) {
-                fail(FaceCopy.TIMED_OUT)
+                // Nobody is blamed for a slow blink: the window simply starts again, and after a
+                // couple of empty ones the line changes from "get ready" to something actionable.
+                windowRestarts++
+                begin()
                 return
             }
             lastFrameAt = now
+            val current = session ?: return
             base = image.toBitmap()
             val rotation = image.imageInfo.rotationDegrees
             upright = if (rotation == 0) base else Bitmap.createBitmap(
@@ -243,17 +278,21 @@ private class FaceAnalyzer(
                     guidance
                 }
             }
+            frameFailures = 0
+            // Leaving the anchor stage is the only progress a verification can show, so the slow
+            // hint keys off it rather than the sample count.
+            if (current.currentStage != FaceStage.Align) windowRestarts = 0
             publish(progress.message, progress.accepted)
             if (progress.complete) {
-                running.set(false)
-                session = null
-                post {
-                    onRunning(false)
-                    if (enabled.get()) onComplete(progress.template)
-                }
+                stop()
+                post { if (enabled.get()) onComplete(progress.template) }
             }
-        } catch (_: Exception) {
-            fail(FaceCopy.PROCESSING_FAILED)
+        } catch (e: Exception) {
+            Log.e(TAG, "face frame failed", e)
+            // A single bad frame is not a failed registration. Only a run of them stops the check,
+            // and then the reason is reported instead of being swallowed.
+            frameFailures++
+            if (frameFailures >= FRAME_FAILURES_ALLOWED) hardFail(FaceCopy.PROCESSING_FAILED, e)
         } finally {
             if (upright !== base) upright?.recycle()
             base?.recycle()
@@ -261,27 +300,39 @@ private class FaceAnalyzer(
         }
     }
 
-    fun publish(instruction: FaceInstruction, accepted: Int) = post { onProgress(instruction, accepted) }
-
-    fun reportError(instruction: FaceInstruction) = post { onError(instruction.english) }
-
-    private fun fail(instruction: FaceInstruction) {
-        running.set(false)
-        session = null
-        post {
-            onRunning(false)
-            onProgress(instruction, 0)
-            onError(instruction.english)
-        }
-    }
-
-    fun post(action: () -> Unit) = main.execute { if (!closed.get()) action() }
-
-    companion object {
+    private companion object {
         /**
          * A natural blink lasts 100-400ms, so guidance needs roughly eight frames a second. The
          * recognition and anti-spoof models are gated by the session's own evidence spacing instead.
          */
-        private const val FRAME_INTERVAL_MS = 120L
+        const val FRAME_INTERVAL_MS = 120L
+
+        /** Consecutive frame exceptions before the check gives up: enough for a hiccup, not a hang. */
+        const val FRAME_FAILURES_ALLOWED = 4
+
+        /** A cause line is truncated, then the plain instruction plus a tag is kept under the limit. */
+        const val CAUSE_MAX_LENGTH = 120
+        const val INSTRUCTION_MAX_LENGTH = 220
+
+        /** Silent 120-second windows with no anchor before the line changes to the slow hint. */
+        const val SLOW_AFTER_WINDOWS = 2
+
+        const val TAG = "FaceCheck"
     }
+}
+
+/**
+ * Field staff read the plain line; a debug build appends the root cause, because "try again" on its
+ * own is not something an administrator can act on or describe back to a developer.
+ */
+private fun FaceInstruction.withCause(cause: Throwable): FaceInstruction =
+    if (!BuildConfig.DEBUG) this else FaceInstruction(
+        "$english [${causeTag(cause)}]".take(INSTRUCTION_MAX_LENGTH), hindi
+    )
+
+private fun causeTag(cause: Throwable): String {
+    val root = generateSequence(cause) { it.cause }.lastOrNull() ?: cause
+    val message = root.message?.replace('\n', ' ')?.trim()?.take(CAUSE_MAX_LENGTH)
+    val tag = root.javaClass.simpleName + if (message.isNullOrBlank()) "" else ": $message"
+    return tag.take(CAUSE_MAX_LENGTH + 40)
 }

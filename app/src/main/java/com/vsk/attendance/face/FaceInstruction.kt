@@ -13,7 +13,7 @@ internal data class FaceInstruction(val english: String, val hindi: String) {
  * to a handful of lines instead of a paragraph, and makes a missing translation obvious.
  */
 internal object FaceCopy {
-    val IDLE = FaceInstruction("Press the button when you are ready", "तैयार हों तो बटन दबाइए")
+    val IDLE = FaceInstruction("Getting the camera ready", "कैमरा तैयार हो रहा है")
     val READY_TO_START = FaceInstruction(
         "Hold the phone at eye level in even light",
         "फ़ोन आँखों की ऊँचाई पर रखिए, अच्छी रोशनी में"
@@ -25,6 +25,10 @@ internal object FaceCopy {
     val TIMED_OUT = FaceInstruction(
         "Face check timed out. Start again",
         "समय हो गया। फिर शुरू करें"
+    )
+    val SLOW = FaceInstruction(
+        "Move to better light and hold very still",
+        "अच्छी रोशनी में बिल्कुल स्थिर रहें"
     )
     val UNREADABLE = FaceInstruction(
         "Face could not be read. Look at the camera",

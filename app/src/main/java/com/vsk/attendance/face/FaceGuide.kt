@@ -9,6 +9,7 @@ import com.google.mediapipe.tasks.core.Delegate
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarker
 import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarkerResult
+import kotlin.math.max
 
 /**
  * MediaPipe FaceLandmarker wrapper used only for guidance and blink detection.
@@ -21,13 +22,7 @@ internal class FaceGuide private constructor(private val landmarker: FaceLandmar
 
     /** Null when the mesh model sees no face in this frame. */
     fun read(bitmap: Bitmap, timestampMs: Long): FaceGuidance? {
-        val image = BitmapImageBuilder(bitmap).build()
-        val result = try {
-            landmarker.detectForVideo(image, timestampMs)
-        } finally {
-            // The wrapper holds native memory; guidance runs many times a second.
-            image.close()
-        }
+        val result = detect(bitmap, timestampMs)
         val faces = result.faceLandmarks()
         if (faces.isEmpty()) return null
         val landmarks = faces[0]
@@ -47,18 +42,30 @@ internal class FaceGuide private constructor(private val landmarker: FaceLandmar
     /**
      * The first inference builds the native graph and takes far longer than the rest, which used to
      * look like a frozen camera. Burning it on a blank frame while the screen still says "ready"
-     * keeps that cost outside the employee's face check.
+     * keeps that cost outside the employee's face check. A failure here is reported rather than
+     * ignored: every guidance frame calls the same graph, so a broken warm-up means broken checks.
      */
     fun warmUp() {
         val blank = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
-        val image = BitmapImageBuilder(blank).build()
         try {
-            landmarker.detectForVideo(image, SystemClock.elapsedRealtime())
-        } catch (_: RuntimeException) {
-            // A warm-up failure is harmless: the first real frame reports whatever is wrong.
+            detect(blank, SystemClock.elapsedRealtime())
         } finally {
-            image.close()
             blank.recycle()
+        }
+    }
+
+    private var lastTimestampMs = -1L
+
+    /** Video mode rejects a timestamp that is not strictly ahead of the previous one. */
+    private fun detect(bitmap: Bitmap, timestampMs: Long): FaceLandmarkerResult {
+        val stamp = max(timestampMs, lastTimestampMs + 1)
+        lastTimestampMs = stamp
+        val image = BitmapImageBuilder(bitmap).build()
+        try {
+            return landmarker.detectForVideo(image, stamp)
+        } finally {
+            // The wrapper holds native memory; guidance runs many times a second.
+            image.close()
         }
     }
 

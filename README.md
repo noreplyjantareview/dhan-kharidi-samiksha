@@ -22,13 +22,13 @@ the dashboard · GitHub Actions to build the APK and deploy the dashboard.
 ```
 Administrator verifies employee identity → issues one-time phone activation code
 Staff types registered mobile (+ activation code on a new phone) → login_staff_v3()
-        │  supervised enrollment: five trained face embeddings, no photos
+        │  supervised enrollment: the camera runs the check itself, no photos
         ▼
 App streams GPS (foreground) while open
-        ├─ On Duty → server challenge → on-device blink + face check → record_check_in_v3()
+        ├─ On Duty → server challenge → camera runs the blink + face check → record_check_in_v3()
         ├─ nodal On Duty at an allowed kendra → same face check → visit stamped
         ├─ every verify_interval_min while on duty / visit open → record_pulse_v3()
-        ├─ Off Duty → server challenge → on-device blink + face check → record_check_out_v3()
+        ├─ Off Duty → server challenge → same automatic check → record_check_out_v3()
         └─ at/after assigned day_end → device-authorized automatic check-out
         ▼
 Server re-validates the geofence distance + IST window before writing anything.
@@ -86,6 +86,14 @@ as absent pulses. Geofence math and windows are enforced server-side.
   frames build the anchor, one blink proves a live person is driving the camera, three post-blink
   frames finish the five-sample template. The randomized head turn is gone — field staff could not
   read and follow it while holding a phone.
+- **No button, no dead end:** the check starts as soon as the camera binds and needs no press, so a
+  registration is one continuous action. A 120-second window that runs out simply starts again; a
+  failed save or a failed duty submission re-runs the check on its own. Only four consecutive broken
+  frames, or a model/camera that cannot start, stop the card.
+- **A field failure names itself:** release builds still show the plain one-line instruction, but
+  debug builds append the root cause (class + message) to the failure line. "Face check failed.
+  Close this screen and try again" on its own cannot be fixed, so the CI debug APK reports what
+  actually threw.
 - **Recognition only when it helps:** the heavy OpenCV pass runs only on frames whose eyes are open
   and whose face is framed, so a check costs about five recognition runs instead of dozens.
 - **No face photos are saved or uploaded.** Frames and crops exist only in memory. The mesh model is
@@ -113,7 +121,8 @@ In browser validation on a real webcam the whole sequence took **9.1 s** at 30 f
 lines; the head-turn flow it replaced routinely exceeded the 90-second challenge.
 
 - Guidance frames are read about eight times a second; two evidence frames are only accepted 350 ms
-  apart, and the whole check must finish within 120 seconds.
+  apart, and one window is 120 seconds. A window that expires is not an error: a new one starts on the
+  same screen, so the employee never has to press anything to try again.
 - A blink is a natural close-and-reopen within 1.2 s, measured against the person's own open-eye
   baseline. Holding the eyes shut is not accepted, and one visible closed frame is enough on a slow
   phone.
@@ -396,9 +405,10 @@ Early present pulse + many absent pulses = "came, then left." No check-in + no p
   authorization/activation/challenge assertions, and reruns migration 9 on empty and populated state.
   It uses no Supabase credentials or live connections. Do not paste the test fixture into a live database.
 - Blink thresholds were tuned against a real laptop webcam in a browser prototype (MediaPipe
-  tasks-vision 1.1.1 in the GPU delegate, 30 fps): a complete check took 9.1 s from button press,
+  tasks-vision 1.1.1 in the GPU delegate, 30 fps): a complete check took 9.1 s from the camera opening,
   with blink peak 0.90 against the 0.55 close threshold and zero framing rejections over 137 face
-  frames. That prototype is not part of this repository; the shipped values come from it.
+  frames. That prototype is not part of this repository; the shipped values come from it, and the
+  phone flow is the same: no button, guidance runs until a blink completes the check.
 - Model qualification: pinned file hashes checked; MiniFASNet ONNX initializers matched the upstream
   checkpoint exactly after conversion transforms. OpenCV 4.12 desktop CPU synthetic inference passed
   for all three packaged models. The Kotlin engine compiled against actual OpenCV Java APIs, and

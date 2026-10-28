@@ -44,11 +44,11 @@ fun FaceEnrollScreen(vm: MainViewModel) {
     ) {
         Text("Supervised face registration", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Text(
-            "Register ${staff?.fullName ?: "this user"} with your administrator present. Hold the phone at " +
-                "eye level in good light, look at the camera and blink when the screen asks. Face matching " +
-                "and presentation-attack checks run on this phone. A biometric template is saved to your " +
-                "account and encrypted on this phone; camera images are not uploaded. Duty checks use this " +
-                "registration.",
+            "Register ${staff?.fullName ?: "this user"} with your administrator present. The camera starts " +
+                "the check on its own — no button to press. Hold the phone at eye level in good light, look " +
+                "at the camera and blink when the screen asks. Face matching and presentation-attack checks " +
+                "run on this phone. A biometric template is saved to your account and encrypted on this " +
+                "phone; camera images are not uploaded. Duty checks use this registration.",
             style = MaterialTheme.typography.bodyMedium,
             color = Color(0xFF64748B),
             modifier = Modifier.padding(top = 6.dp, bottom = 16.dp)
@@ -84,7 +84,8 @@ fun FaceEnrollScreen(vm: MainViewModel) {
                                 msg = null
                                 vm.saveFaceTemplate(template) { ok, err ->
                                     saved = ok
-                                    submitted = ok
+                                    // A save failure keeps the card paused: otherwise it would
+                                    // re-register and re-submit forever against the same rejection.
                                     if (!ok) msg = err ?: "Could not save face registration."
                                 }
                             }
@@ -103,6 +104,13 @@ fun FaceEnrollScreen(vm: MainViewModel) {
         msg?.let {
             Spacer(Modifier.height(12.dp))
             Text(it, color = Color(0xFFDC2626), style = MaterialTheme.typography.bodyMedium)
+            // Only a rejected save can be retried in place; a stopped camera check needs the screen
+            // reopened, and its own line already says that.
+            if (submitted && !saved) {
+                TextButton(onClick = { submitted = false; msg = null }) {
+                    Text("Run the face registration again")
+                }
+            }
         }
         TextButton(onClick = { vm.logout() }) { Text("Sign out") }
     }

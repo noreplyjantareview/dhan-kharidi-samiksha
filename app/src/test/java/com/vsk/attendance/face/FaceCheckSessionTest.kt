@@ -545,7 +545,7 @@ class FaceCheckSessionTest {
             FaceCopy.TWO_FACES, FaceCopy.FACE_LOST, FaceCopy.MOVE_CLOSER, FaceCopy.MOVE_BACK,
             FaceCopy.FACE_IN_FRAME, FaceCopy.UPRIGHT, FaceCopy.EYE_LEVEL, FaceCopy.TOO_DARK,
             FaceCopy.TOO_BRIGHT, FaceCopy.FLAT_LIGHT, FaceCopy.TOO_BLURRY, FaceCopy.LIVE_FACE,
-            FaceCopy.IDLE, FaceCopy.READY_TO_START
+            FaceCopy.IDLE, FaceCopy.READY_TO_START, FaceCopy.SLOW
         )
         // Lines that end the check and go to a supervisor, so they may name the problem.
         val failures = listOf(

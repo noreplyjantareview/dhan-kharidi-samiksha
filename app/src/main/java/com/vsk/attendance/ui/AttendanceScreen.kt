@@ -311,7 +311,7 @@ fun AttendanceScreen(vm: MainViewModel) {
                         style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold
                     )
                     Text(
-                        "Look at the camera and blink when the screen asks. " +
+                        "Look at the camera and blink when the screen asks. The check starts by itself. " +
                             "Face and presentation checks run on this phone; no camera image is uploaded.",
                         style = MaterialTheme.typography.bodySmall, color = Slate,
                         modifier = Modifier.padding(top = 2.dp, bottom = 12.dp)
@@ -321,7 +321,6 @@ fun AttendanceScreen(vm: MainViewModel) {
                             enrolling = false,
                             template = check.template,
                             enabled = !busy,
-                            buttonColor = if (check.action == "on") Green else Red,
                             onComplete = {
                                 scope.launch {
                                     // Ignore completion from a cancelled/replaced capture, even if it arrives late.
