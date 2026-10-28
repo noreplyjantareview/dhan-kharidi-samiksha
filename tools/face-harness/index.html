@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Face harness — the phone's engine, this webcam</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 text-slate-900">
+<main class="mx-auto max-w-3xl p-4 space-y-4">
+  <header class="space-y-1">
+    <h1 class="text-xl font-semibold">Face check harness</h1>
+    <p class="text-sm text-slate-600">
+      The employee's screen, minus the phone. The camera and MediaPipe run here; every decision —
+      framing, the blink, the light and sharpness gate, the shape print and the threshold — is made by
+      the app's own Kotlin engine in the terminal that served this page.
+    </p>
+  </header>
+
+  <section class="space-y-2 rounded-2xl bg-white p-4 shadow-sm">
+    <div class="relative overflow-hidden rounded-xl bg-slate-900">
+      <canvas id="view" width="640" height="480" class="w-full -scale-x-100"></canvas>
+      <div id="veil" class="absolute inset-0 flex items-center justify-center bg-slate-900/80 text-slate-100">
+        <div class="space-y-3 p-4 text-center">
+          <p id="veil-line">Getting the camera ready</p>
+          <div class="mx-auto h-1 w-40 overflow-hidden rounded bg-slate-700">
+            <div id="veil-bar" class="h-full w-0 bg-sky-400 transition-all"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p id="line" class="text-lg font-semibold">Getting the camera ready</p>
+    <p id="line-hi" class="text-base text-slate-600">कैमरा तैयार हो रहा है</p>
+
+    <p class="text-xs text-slate-500">
+      The check runs by itself. Images are processed in this browser tab only. No face photos are saved or uploaded.
+    </p>
+    <p class="text-xs text-slate-500">
+      जाँच अपने आप चलती है। छवियाँ केवल इसी ब्राउज़र में जाँची जाती हैं। चेहरे की फ़ोटो नहीं सहेजी या भेजी जाती है।
+    </p>
+  </section>
+
+  <section class="space-y-3 rounded-2xl bg-white p-4 shadow-sm">
+    <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500">
+      Harness only — the phone has no buttons
+    </h2>
+    <div class="flex flex-wrap gap-2">
+      <button data-action="register" class="rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">Register (enrol)</button>
+      <button data-action="verify" class="rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">Verify (match)</button>
+      <button data-action="restart" class="rounded-lg bg-slate-200 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-300 disabled:opacity-50">Restart the check</button>
+      <button data-action="clearTemplate" class="rounded-lg bg-rose-100 px-3 py-2 text-sm font-medium text-rose-800 hover:bg-rose-200 disabled:opacity-50">Clear template</button>
+    </div>
+    <p class="text-xs text-slate-500">
+      Register is the enrolment at On Duty, Verify is the recognition at a later gate. Finish a
+      registration, press Verify and read the cosines; then press Register with someone else in front
+      of the camera and Verify against their face. That second pair is the number the threshold needs.
+    </p>
+  </section>
+
+  <section class="space-y-3 rounded-2xl bg-white p-4 shadow-sm">
+    <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500">Calibration readout</h2>
+    <dl id="engine" class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-4"></dl>
+    <table class="w-full text-left text-xs">
+      <caption class="pb-1 text-left text-slate-500">
+        Cosine of this frame's shape print against each stored sample. The engine accepts only when
+        the second best of five and the centroid of five both reach the threshold.
+      </caption>
+      <thead class="text-slate-500">
+        <tr>
+          <th class="py-1 pr-3 font-medium">sample</th>
+          <th class="py-1 pr-3 font-medium">cosine</th>
+          <th class="py-1 font-medium">against threshold</th>
+        </tr>
+      </thead>
+      <tbody id="samples" class="font-mono"></tbody>
+    </table>
+    <p id="cause" class="hidden break-words rounded-lg bg-amber-50 p-2 font-mono text-xs text-amber-900"></p>
+  </section>
+
+  <section class="space-y-2 rounded-2xl bg-white p-4 shadow-sm">
+    <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500">What this can and cannot prove</h2>
+    <ul id="limits" class="list-disc space-y-1 pl-5 text-xs text-slate-600"></ul>
+  </section>
+</main>
+
+<script type="module">
+import { FaceLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.1/vision_bundle.mjs';
+
+// The phone's own numbers, not knobs: 640x480 RGBA analysis frames, one every 120 ms, CPU delegate.
+const FRAME_W = 640, FRAME_H = 480, FRAME_INTERVAL_MS = 120, MAGIC = 0x46414345;
+
+const canvas = document.getElementById('view');
+const ctx = canvas.getContext('2d', { willReadFrequently: true });
+const veil = document.getElementById('veil');
+const veilLine = document.getElementById('veil-line');
+const veilBar = document.getElementById('veil-bar');
+const lineEl = document.getElementById('line');
+const lineHiEl = document.getElementById('line-hi');
+const engineEl = document.getElementById('engine');
+const samplesEl = document.getElementById('samples');
+const causeEl = document.getElementById('cause');
+
+const app = { landmarker: null, video: null, timer: null, busy: false, lastTs: 0, finished: false, facts: null };
+
+const LIMITS = [
+  'Proves: the real session state machine, its thresholds, the quality gate, the bilingual copy, the stored template envelope and the exact line the debug build shows — on your camera, in your light.',
+  'Proves: how far apart two people actually measure with this shape print, which is the number MATCH_THRESHOLD 0.999 was set from synthetic geometry and still needs.',
+  'Does not prove: the Android camera path, the bitmap copy that fixed the recycled-bitmap crash, the APK assets, or Supabase enrolment. Only the phone and the dashboard can show those.',
+  'The graph runs the identical face_landmarker.task the APK ships, served from app/src/main/assets/face/, so a difference here is the engine, not the model.',
+  'Frames go to 127.0.0.1 only, live in memory, and nothing is written to disk or sent to the internet.',
+];
+document.getElementById('limits').replaceChildren(...LIMITS.map(text => {
+  const li = document.createElement('li');
+  li.textContent = text;
+  return li;
+}));
+
+function say(english, hindi) {
+  lineEl.textContent = english;
+  lineHiEl.textContent = hindi || '';
+  const blocked = !app.landmarker || !app.video || app.finished;
+  veil.classList.toggle('hidden', !blocked);
+  if (blocked) veilLine.textContent = english;
+}
+
+function progress(fraction, text) {
+  veilBar.style.width = `${Math.round(fraction * 100)}%`;
+  veilLine.textContent = text;
+}
+
+async function initModel() {
+  progress(0.1, 'Loading the MediaPipe web assembly');
+  const fileset = await FilesetResolver.forVisionTasks(
+    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.1/wasm'
+  );
+  progress(0.5, 'Building the face graph on the CPU, like the phone');
+  app.landmarker = await FaceLandmarker.createFromOptions(fileset, {
+    baseOptions: { modelAssetPath: '/face_landmarker.task', delegate: 'CPU' },
+    runningMode: 'VIDEO',
+    numFaces: 1,
+    outputFaceBlendshapes: true,
+  });
+  progress(1, 'Graph ready');
+}
+
+async function initCamera() {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { width: { ideal: FRAME_W }, height: { ideal: FRAME_H }, facingMode: 'user' },
+    audio: false,
+  });
+  const video = document.createElement('video');
+  video.srcObject = stream;
+  video.muted = true;
+  await video.play();
+  app.video = video;
+}
+
+/** The same eyelid floor the phone reads out of the mesh model's own blendshapes. */
+function blinkFloor(result) {
+  const shapes = result.faceBlendshapes;
+  if (!shapes || !shapes.length) return 0;
+  let worst = 0;
+  for (const category of shapes[0].categories) {
+    const name = (category.categoryName || '').toLowerCase();
+    if (name.includes('blink') && name.includes('eye')) worst = Math.max(worst, category.score);
+  }
+  return worst;
+}
+
+function packet(now, landmarks, closure, pixels) {
+  const buffer = new ArrayBuffer(28 + landmarks.length * 8 + pixels.byteLength);
+  const head = new DataView(buffer);
+  head.setInt32(0, MAGIC, true);
+  head.setBigInt64(4, BigInt(now), true);
+  head.setInt32(12, FRAME_W, true);
+  head.setInt32(16, FRAME_H, true);
+  head.setInt32(20, landmarks.length, true);
+  head.setFloat32(24, closure, true);
+  const floats = new Float32Array(buffer, 28, landmarks.length * 2);
+  landmarks.forEach((point, index) => {
+    floats[index * 2] = point.x;
+    floats[index * 2 + 1] = point.y;
+  });
+  new Uint8Array(buffer, 28 + landmarks.length * 8, pixels.byteLength)
+    .set(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
+  return buffer;
+}
+
+async function step() {
+  if (app.busy || app.finished || !app.video || !app.landmarker) return;
+  app.busy = true;
+  try {
+    ctx.drawImage(app.video, 0, 0, FRAME_W, FRAME_H);
+    const frame = ctx.getImageData(0, 0, FRAME_W, FRAME_H);
+    // Video mode rejects a timestamp that is not strictly ahead of the previous one, which is the
+    // same guard FaceGuide.detect keeps on the phone.
+    const now = Date.now();
+    const ts = Math.max(now, app.lastTs + 1);
+    app.lastTs = ts;
+    const result = app.landmarker.detectForVideo(canvas, ts);
+    const faces = result.faceLandmarks;
+    const landmarks = faces && faces.length ? faces[0] : [];
+    const body = packet(now, landmarks, blinkFloor(result), frame.data);
+    const reply = await (await fetch('/frame', { method: 'POST', body })).json();
+    render(reply);
+  } catch (error) {
+    showCause(`${error.name || 'Error'}: ${error.message}`);
+  } finally {
+    app.busy = false;
+  }
+}
+
+function cell(label, value) {
+  const wrap = document.createElement('div');
+  const dt = document.createElement('dt');
+  dt.className = 'text-slate-500';
+  dt.textContent = label;
+  const dd = document.createElement('dd');
+  dd.className = 'font-mono text-slate-800';
+  dd.textContent = (value === null || value === undefined || value === '') ? '—' : String(value);
+  wrap.append(dt, dd);
+  return wrap;
+}
+
+function render(reply) {
+  say(reply.line, reply.hi);
+  const facts = app.facts || {};
+  const stats = reply.stats
+    ? `${reply.stats.brightness.toFixed(0)} / ${reply.stats.contrast.toFixed(0)} / ${reply.stats.edges.toFixed(1)}`
+    : null;
+  const threshold = Number(facts.threshold ?? 0.999);
+  const scores = reply.sampleScores || [];
+  engineEl.replaceChildren(
+    cell('stage', reply.stage),
+    cell('mode', reply.mode),
+    cell('samples accepted', `${reply.accepted}/5`),
+    cell('quality complaint', reply.quality),
+    cell('mesh score', reply.score),
+    cell('matched', reply.matched),
+    cell('yaw', reply.yaw),
+    cell('blink margin', reply.blinkMargin),
+    cell('light / contrast / edges', stats),
+    cell('stalled', reply.slowHint ? 'yes — better light, hold still' : null),
+    cell('threshold', facts.threshold),
+    cell('model', facts.model ? `${facts.model} · ${facts.dimensions}d` : null),
+    cell('template stored', facts.hasTemplate ? `${facts.templateChars} chars` : 'no'),
+    cell('window restarts', facts.windowRestarts),
+    cell('frame failures', facts.frameFailures),
+    cell('finished', facts.finished ? 'yes — Restart to run again' : null),
+    cell('stopped', facts.stopped ? 'yes — press Restart' : null)
+  );
+  samplesEl.replaceChildren(...scores.map((value, index) => {
+    const clears = Number(value) >= threshold;
+    return row(`${index + 1}`, Number(value).toFixed(5), clears ? 'clears' : 'short', clears);
+  }));
+  showCause(reply.cause || reply.error);
+  if (reply.complete) {
+    app.finished = true;
+    clearInterval(app.timer);
+    say(`${reply.en} — template held in memory only, ${reply.templateChars} chars`, reply.hi);
+    refreshState().then(facts => { app.facts = facts; });
+  }
+}
+
+function row(first, second, third, good) {
+  const tr = document.createElement('tr');
+  tr.className = 'border-t border-slate-100';
+  [first, second, third].forEach((text, index) => {
+    const td = document.createElement('td');
+    td.className = index === 2 ? (good ? 'py-1 text-emerald-700' : 'py-1 text-rose-700') : 'py-1 pr-3';
+    td.textContent = text;
+    tr.append(td);
+  });
+  return tr;
+}
+
+function showCause(message) {
+  if (!message) { causeEl.classList.add('hidden'); causeEl.textContent = ''; return; }
+  causeEl.textContent = message;
+  causeEl.classList.remove('hidden');
+}
+
+async function refreshState() {
+  const reply = await (await fetch('/state')).json();
+  if (!reply.ok) { showCause(reply.error); return null; }
+  return reply;
+}
+
+async function control(action) {
+  const reply = await (await fetch('/control', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action }),
+  })).json();
+  if (!reply.ok) { showCause(reply.error); return; }
+  app.facts = reply;
+  app.finished = false;
+  showCause(null);
+  samplesEl.replaceChildren();
+  startLoop();
+}
+
+function startLoop() {
+  clearInterval(app.timer);
+  app.timer = setInterval(step, FRAME_INTERVAL_MS);
+}
+
+for (const button of document.querySelectorAll('[data-action]')) {
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    try { await control(button.dataset.action); } finally { button.disabled = false; }
+  });
+}
+
+async function start() {
+  try {
+    await initModel();
+    await initCamera();
+    app.facts = await refreshState();
+    startLoop();
+  } catch (error) {
+    const cameraProblem = ['NotAllowedError', 'NotFoundError', 'NotReadableError', 'OverconstrainedError']
+      .includes(error && error.name);
+    say(
+      cameraProblem
+        ? 'Front camera could not start. Close this screen and retry'
+        : 'Face models could not load. Reinstall the official app',
+      cameraProblem ? 'फ़्रंट कैमरा शुरू नहीं हुआ। स्क्रीन बंद कर फिर करें' : 'चेहरा मॉडल लोड नहीं हुए।'
+    );
+    showCause(`${error.name || 'Error'}: ${error.message}`);
+  }
+}
+
+// ?noautostart=1 holds the page still so start() can be called from the console against a stubbed
+// getUserMedia. It exists because this machine's browser has no camera permission to grant, and the
+// frame loop still had to be proven without spending someone's webcam test on it.
+if (new URLSearchParams(location.search).has('noautostart')) window.faceHarnessStart = start;
+else await start();
+</script>
+</body>
+</html>

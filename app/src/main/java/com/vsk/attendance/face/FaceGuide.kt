@@ -65,7 +65,13 @@ internal class FaceGuide private constructor(private val landmarker: FaceLandmar
     private fun detect(bitmap: Bitmap, timestampMs: Long): FaceLandmarkerResult {
         val stamp = max(timestampMs, lastTimestampMs + 1)
         lastTimestampMs = stamp
-        val image = BitmapImageBuilder(bitmap).build()
+        // MPImage.close() runs Bitmap.recycle() on the bitmap BitmapImageBuilder was given, so
+        // inference has to receive a disposable copy. The caller still needs this frame readable
+        // afterwards: the light and sharpness meter samples it once the mesh has said where the face is.
+        val disposable = checkNotNull(bitmap.copy(Bitmap.Config.ARGB_8888, false)) {
+            "Face frame could not be copied for inference."
+        }
+        val image = BitmapImageBuilder(disposable).build()
         try {
             return landmarker.detectForVideo(image, stamp)
         } finally {

@@ -114,6 +114,11 @@ as absent pulses. Geofence math and windows are enforced server-side.
   and a camera does not always deliver the requested pixel format, so each frame is rotated into an
   ARGB_8888 bitmap before inference. A frame that arrives already recycled is reported as such
   instead of surfacing the same native assert.
+- **MediaPipe owns whatever bitmap it is given:** closing the image it built runs `recycle()` on that
+  bitmap, which is why `FaceGuide.detect` hands inference a private copy. The caller's frame has to
+  survive the mesh pass because the light and sharpness meter reads its pixels right afterwards — on
+  the field phone this showed up as `Can't call getPixels() on the recycled bitmap` the moment a face
+  appeared, because the very first anchor sample needed those pixels.
 - **No face photos are saved or uploaded.** Frames and landmarks exist only in memory. Numeric
   templates are still sensitive biometric data: they are stored in the protected staff record and
   encrypted locally with AndroidKeyStore AES-GCM. Device credentials are encrypted too; app backups
@@ -375,10 +380,11 @@ app/src/main/java/com/vsk/attendance/
   data/{Models,SupabaseApi,SessionStore}.kt
   util/GeoUtils.kt               # Haversine + IST clock
   location/{LocationHelper,AttendanceRules}.kt
-  face/{FaceTemplate,FaceGeometry,BlinkTracker,FaceInstruction,FaceCheckSession,FaceGuide,FaceEngine,FaceCaptureCard}.kt
+  face/{FaceTemplate,FaceGeometry,BlinkTracker,FaceInstruction,FaceCheckSession,FaceMeshSignature,FaceFrameQuality,FaceGuide,FaceCaptureCard}.kt
   ui/{MainViewModel,LoginScreen,FaceEnrollScreen,AttendanceScreen}.kt + theme/
 app/src/main/assets/face/        # pinned local models, checksums, licenses and conversion provenance
 app/src/test/                    # JVM template and capture-session regression tests
+tools/face-harness/              # browser harness: the JVM engine, this machine's webcam, real thresholds
 .github/workflows/               # build-apk.yml, deploy-dashboard.yml
 ```
 
@@ -443,6 +449,17 @@ Early present pulse + many absent pulses = "came, then left." No check-in + no p
   authorization/activation/challenge assertions plus 25 mesh-print assertions, and reruns migrations
   9 and 10 on both empty and populated state.
   It uses no Supabase credentials or live connections. Do not paste the test fixture into a live database.
+- Browser harness: `node tools/face-harness/run.mjs` compiles the seven Android-free engine files with
+  the Kotlin 2.0.21 JVM compiler and serves `http://localhost:8765`, where `tools/face-harness/index.html`
+  runs MediaPipe tasks-vision 1.1.1 against this repository's own `face_landmarker.task` bytes and posts
+  one 640x480 frame every 120 ms to the real `FaceCheckSession`. So the framing lines, the blink
+  window, the light and sharpness gate, the shape print, `MATCH_THRESHOLD` and the stored template are
+  the shipped code paths, not a reimplementation, and the page shows the same `[mesh 0.97766 needs
+  0.99900]` line a debug APK shows. It is a development tool: the Register/Verify/Restart/Clear buttons
+  exist only here, the phone has none. Frames go to `127.0.0.1` only and are never written to disk.
+  `--check` compiles without starting the server, `?noautostart=1` lets the loop be driven from the
+  console against a stubbed camera. What it cannot show is the Android camera path, the bitmap copy
+  that fixed the recycled-bitmap crash, the APK assets or Supabase enrolment.
 - Blink thresholds were tuned against a real laptop webcam in a browser prototype (MediaPipe
   tasks-vision 1.1.1 in the GPU delegate, 30 fps): a complete check took 9.1 s from the camera opening,
   with blink peak 0.90 against the 0.55 close threshold and zero framing rejections over 137 face
