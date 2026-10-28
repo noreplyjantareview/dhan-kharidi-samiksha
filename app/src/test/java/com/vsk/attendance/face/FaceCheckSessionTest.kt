@@ -5,17 +5,29 @@ import org.junit.Test
 
 /**
  * The blink sequence replaces the head turn, so every case drives the two entry points the analyzer
- * has: cheap mesh guidance on every frame, and recognition evidence only when the eyes and the
- * framing say the frame is worth the heavy models.
+ * has: mesh guidance on every frame, and the shape print only when the eyes and the framing say the
+ * frame is worth measuring.
  */
 class FaceCheckSessionTest {
+    private val dimensions = FaceTemplate.DIMENSIONS
+
     private fun axis(index: Int = 0, magnitude: Float = 1f): List<Float> =
-        List(128) { if (it == index) magnitude else 0f }
+        List(dimensions) { if (it == index) magnitude else 0f }
 
     private fun stored(): String = FaceTemplate(samples = List(5) { axis() }).encode()
 
     private fun vector(offset: Float): List<Float> =
-        FaceTemplate.normalized(List(128) { if (it == 0) 1f else if (it == 1) offset else 0f })!!
+        FaceTemplate.normalized(List(dimensions) { if (it == 0) 1f else if (it == 1) offset else 0f })!!
+
+    /** A print [score] away from [axis], in the plane of components 0 and [index]. */
+    private fun near(score: Float, index: Int = 1): List<Float> =
+        List(dimensions) {
+            when (it) { 0 -> score; index -> kotlin.math.sqrt(1f - score * score); else -> 0f }
+        }
+
+    /** The print exactly between two neighbours; the cosine to each is the square root of their own. */
+    private fun bisector(a: List<Float>, b: List<Float>): List<Float> =
+        FaceTemplate.normalized(List(dimensions) { a[it] + b[it] })!!
 
     // Exercise the whole security matrix even when an earlier case fails.
     private fun <T> assertEveryCase(cases: List<T>, check: (T) -> Unit) {
@@ -314,8 +326,11 @@ class FaceCheckSessionTest {
 
     @Test fun storedTemplateConsensusCannotHideAnIdentitySwitch() {
         val a = axis()
-        val b = axis(1)
-        val reference = FaceTemplate(samples = listOf(a, a, b, b, axis(2)))
+        // A registration that drifted between two neighbouring prints: both are accepted on their own,
+        // because two samples plus the average agree with each of them.
+        val b = near(0.9985f)
+        val middle = bisector(a, b)
+        val reference = FaceTemplate(samples = listOf(a, b, middle, middle, middle))
         assertTrue(reference.matches(a))
         assertTrue(reference.matches(b))
         val driver = Driver(enrolling = false, template = reference.encode())
@@ -346,10 +361,10 @@ class FaceCheckSessionTest {
         }
     }
 
-    @Test fun invalidEmbeddingsNeverBecomeSamplesOrATemplate() {
+    @Test fun invalidPrintsNeverBecomeSamplesOrATemplate() {
         assertEveryCase(
-            listOf(emptyList(), List(127) { 0f }, List(129) { 0f }, axis(magnitude = 0f),
-                axis(magnitude = 2f), axis(magnitude = Float.NaN),
+            listOf(emptyList(), List(dimensions - 1) { 0f }, List(dimensions + 1) { 0f },
+                axis(magnitude = 0f), axis(magnitude = 2f), axis(magnitude = Float.NaN),
                 axis(magnitude = Float.POSITIVE_INFINITY))
         ) { invalid ->
             for (enrolling in listOf(true, false)) {
@@ -414,45 +429,19 @@ class FaceCheckSessionTest {
         }
     }
 
-    @Test fun aSpoofFrameInMidBurstDiscardsOnlyThePostBlinkSamples() {
+    @Test fun anIdentityMismatchCarriesTheScoreThatFailed() {
+        val reference = FaceTemplate(samples = List(5) { axis() })
+        val stranger = Driver(enrolling = false, template = reference.encode())
+        val mismatch = stranger.frame(vector = axis(1))
+        assertEquals(FaceCopy.NO_MATCH, mismatch.message)
+        assertEquals("A completely different print scores zero", 0f, mismatch.score, 0.00001f)
         val driver = Driver()
-        driver.align()
-        driver.blink()
-        assertEquals(4, driver.frame().accepted)
-        val pad = driver.reject(FaceInterruption.Pad, message = FaceCopy.LIVE_FACE)
-        assertFalse(pad.complete)
-        assertNull(pad.template)
-        assertEquals(2, pad.accepted)
-        assertEquals(FaceStage.Blink, driver.session.currentStage)
-        driver.blink()
-        assertTrue(driver.capture().complete)
-    }
-
-    @Test fun sustainedSpoofFramesResetTheCheck() {
-        for (enrolling in listOf(true, false)) {
-            val driver = Driver(enrolling)
-            driver.align()
-            driver.blink()
-            var last: FaceCheckProgress? = null
-            repeat(FaceCheckSession.PAD_FRAMES) { last = driver.reject(FaceInterruption.Pad) }
-            assertEquals(0, last!!.accepted)
-            assertEquals(FaceStage.Align, driver.session.currentStage)
-            assertTrue(driver.challenge().complete)
-        }
-    }
-
-    @Test fun faceLossAndSpoofStreaksDoNotLeakIntoEachOther() {
-        val driver = Driver()
-        driver.align()
-        repeat(FaceCheckSession.FACE_LOST_FRAMES - 1) { driver.reject(FaceInterruption.FaceLost) }
-        repeat(FaceCheckSession.PAD_FRAMES - 1) { driver.reject(FaceInterruption.Pad) }
-        driver.reject(FaceInterruption.FaceLost)
-        val stillAlive = driver.reject(FaceInterruption.Pad)
-        assertEquals("Neither streak alone is long enough to erase the alignment",
-            2, stillAlive.accepted)
-        assertEquals(FaceStage.Blink, driver.session.currentStage)
-        driver.blink()
-        assertTrue(driver.capture().complete)
+        driver.frame()
+        val switched = driver.frame(vector = axis(1))
+        assertEquals(FaceCopy.ONE_PERSON, switched.message)
+        assertEquals(0f, switched.score, 0.00001f)
+        // Only a comparison that ran carries a number.
+        assertEquals(-1f, Driver().frame().score, 0f)
     }
 
     @Test fun rejectedQualityFrameNeverAddsSamplesOrCompletes() {
@@ -542,9 +531,9 @@ class FaceCheckSessionTest {
         val guidance = listOf(
             FaceCopy.LOOK, FaceCopy.BLINK_NOW, FaceCopy.KEEP_LOOKING, FaceCopy.COMPLETE,
             FaceCopy.TIMED_OUT, FaceCopy.UNREADABLE, FaceCopy.NO_MATCH, FaceCopy.ONE_PERSON,
-            FaceCopy.TWO_FACES, FaceCopy.FACE_LOST, FaceCopy.MOVE_CLOSER, FaceCopy.MOVE_BACK,
-            FaceCopy.FACE_IN_FRAME, FaceCopy.UPRIGHT, FaceCopy.EYE_LEVEL, FaceCopy.TOO_DARK,
-            FaceCopy.TOO_BRIGHT, FaceCopy.FLAT_LIGHT, FaceCopy.TOO_BLURRY, FaceCopy.LIVE_FACE,
+            FaceCopy.FACE_LOST, FaceCopy.MOVE_CLOSER, FaceCopy.MOVE_BACK,
+            FaceCopy.FACE_IN_FRAME, FaceCopy.UPRIGHT, FaceCopy.TOO_DARK,
+            FaceCopy.TOO_BRIGHT, FaceCopy.FLAT_LIGHT, FaceCopy.TOO_BLURRY,
             FaceCopy.IDLE, FaceCopy.READY_TO_START, FaceCopy.SLOW
         )
         // Lines that end the check and go to a supervisor, so they may name the problem.
@@ -568,7 +557,7 @@ class FaceCheckSessionTest {
             driver.frame().message,
             driver.frame(framing = FramingReason.TooFar, delta = 900).message,
             driver.frame(framing = FramingReason.TooFar, delta = 900).message,
-            driver.reject(FaceInterruption.Pad, message = FaceCopy.LIVE_FACE).message,
+            driver.reject(FaceInterruption.Quality, message = FaceCopy.TOO_BLURRY).message,
             driver.challenge().message
         )
         assertEveryCase(seen) { line ->

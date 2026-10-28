@@ -46,9 +46,9 @@ fun FaceEnrollScreen(vm: MainViewModel) {
         Text(
             "Register ${staff?.fullName ?: "this user"} with your administrator present. The camera starts " +
                 "the check on its own — no button to press. Hold the phone at eye level in good light, look " +
-                "at the camera and blink when the screen asks. Face matching and presentation-attack checks " +
-                "run on this phone. A biometric template is saved to your account and encrypted on this " +
-                "phone; camera images are not uploaded. Duty checks use this registration.",
+                "at the camera and blink when the screen asks. The check measures the shape of your face and " +
+                "that your eyes moved: no photo is ever saved or uploaded. The encrypted registration is kept " +
+                "on this phone and on your account, and every duty check is decided here, not on a server.",
             style = MaterialTheme.typography.bodyMedium,
             color = Color(0xFF64748B),
             modifier = Modifier.padding(top = 6.dp, bottom = 16.dp)

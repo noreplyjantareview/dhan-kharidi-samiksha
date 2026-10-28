@@ -230,13 +230,14 @@
           <p id="faceActivationIdentity" class="font-semibold">Personally verify this employee's identity before issuing a code. Share the code privately with that employee only.</p>
           <p>The code expires in <b>15 minutes</b>, is for <b>one use</b>, and locks after <b>5 wrong attempts</b>.</p>
           <p>Issuing a code <b>does not revoke the current phone</b>. Only successful code redemption replaces it.</p>
+          <p id="faceActivationLegacy" class="hidden rounded-lg border border-red-200 bg-white p-3 text-red-800">This person is registered with the <b>older face print</b>, which the current app cannot read. Choose <b>Activate phone and reset face</b> so they can register again with the new build.</p>
         </div>
         <form id="faceActivationForm" class="space-y-4" aria-busy="false">
           <fieldset class="min-w-0 space-y-3">
             <legend class="mb-2 font-semibold">Choose the activation action</legend>
             <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3">
               <input id="faceActivationKeep" type="radio" name="faceActivationMode" value="keep" checked class="mt-1 h-4 w-4 shrink-0 accent-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 disabled:cursor-not-allowed" />
-              <span class="min-w-0"><b>Activate phone — keep enrolled face</b><span class="mt-1 block text-xs text-slate-500">Default. No face reset is requested. An old face version still needs a v3 upgrade in the app.</span></span>
+              <span class="min-w-0"><b>Activate phone — keep enrolled face</b><span class="mt-1 block text-xs text-slate-500">Default. Keeps the face print this person already registered. Choose the reset option instead when the Face column says the print is old.</span></span>
             </label>
             <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-red-200 p-3">
               <input id="faceActivationReset" type="radio" name="faceActivationMode" value="reset" class="mt-1 h-4 w-4 shrink-0 accent-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 disabled:cursor-not-allowed" />

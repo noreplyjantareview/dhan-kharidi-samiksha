@@ -6,7 +6,13 @@ internal data class FaceCheckProgress(
     val message: FaceInstruction,
     val accepted: Int = 0,
     val complete: Boolean = false,
-    val template: String? = null
+    val template: String? = null,
+    /**
+     * Mesh similarity that produced this result, or -1 when no comparison ran. A shape print is only
+     * as good as its operating point, so a debug screen carries the number and one field test is what
+     * sets [FaceTemplate.MATCH_THRESHOLD] instead of a guess.
+     */
+    val score: Float = -1f
 )
 
 /**
@@ -16,30 +22,32 @@ internal data class FaceCheckProgress(
 internal enum class FaceInterruption {
     Quality,
     FaceLost,
-    Pad,
     Identity
 }
 
 /** What the employee is being asked to do. One stage, one short line. */
 internal enum class FaceStage { Align, Blink, Capture, Done }
 
-/** Everything the mesh model knows about the current frame, before any recognition work. */
+/** Everything the mesh model knows about the current frame, before identity is looked at. */
 internal data class FaceGuidance(
     val openRatio: Float,
     val expressionClosure: Float,
     val framing: FramingReason? = null
 )
 
+/** One mesh pass: the guidance for the screen and the shape print for identity. */
+internal data class FaceReading(val guidance: FaceGuidance, val signature: MeshSignature)
+
 /**
  * Blink-guided face check, replacing the head-turn sequence that field staff could not follow.
  *
  * Stages: two centred frames build the identity anchor, one blink proves a live person is driving
  * the camera, then three frames taken with the eye open complete the five-sample template. Evidence
- * frames are the only ones that run the recognition and anti-spoof models, so the wait between
- * pressing the button and finishing is measured in seconds rather than in model runs.
+ * frames are the only ones whose shape print is measured, so the light and sharpness gate runs with
+ * them and the wait between opening the screen and finishing is measured in seconds.
  *
- * Nothing about the stored template changed: still five normalized 128-value SFace samples in the
- * sface-2021dec format, so no server migration is involved.
+ * Nothing about the stored envelope changed: still five unit-length normalized samples, now 78 mesh
+ * values instead of 128 SFace values, which is a new model tag rather than a new server design.
  */
 internal class FaceCheckSession(
     private val enrolling: Boolean,
@@ -62,7 +70,6 @@ internal class FaceCheckSession(
     private var lastClosure = 1f
     private var lastFraming: FramingReason? = FramingReason.EyesOut
     private var lostStreak = 0
-    private var padStreak = 0
     private var blinkPeak = 0f
     private var finished = false
 
@@ -72,8 +79,8 @@ internal class FaceCheckSession(
     val blinkMargin: Float get() = blinkPeak - BlinkTracker.CLOSE_T
 
     /**
-     * Recognition and anti-spoof models are heavy and a half-shut eyelid ruins the sample, so a
-     * frame only runs them while the face is framed and the eyes say it is open.
+     * A half-shut eyelid moves the lids the print measures, so a frame only contributes identity
+     * while the face is framed and the eyes say it is open.
      */
     val needsEvidence: Boolean
         get() = (stage == FaceStage.Align || stage == FaceStage.Capture) && eyesReady
@@ -85,7 +92,7 @@ internal class FaceCheckSession(
         require(enrolling || reference != null) { "Your face registration needs an administrator reset." }
     }
 
-    /** Every frame goes through here first; it is cheap and decides whether the heavy models run. */
+    /** Every frame goes through here first; it is cheap and decides what the print is used for. */
     fun onGuidance(guide: FaceGuidance, now: Long): FaceCheckProgress {
         if (finished) return FaceCheckProgress(FaceCopy.COMPLETE, SAMPLES_REQUIRED, complete = true)
         if (now - startedAt > TIMEOUT_MS) return FaceCheckProgress(FaceCopy.TIMED_OUT, samples.size)
@@ -119,7 +126,7 @@ internal class FaceCheckSession(
         return progress()
     }
 
-    /** A frame that passed detection, quality and anti-spoof screening in the heavier OpenCV pass. */
+    /** A frame whose mesh print was taken after the light and sharpness gate passed. */
     fun onEvidence(vector: List<Float>, yaw: Float, now: Long): FaceCheckProgress {
         val eyesWereReady = eyesReady
         if (finished) return FaceCheckProgress(FaceCopy.COMPLETE, SAMPLES_REQUIRED, complete = true)
@@ -129,14 +136,17 @@ internal class FaceCheckSession(
         }
         if (reference != null && !reference.matches(vector)) {
             return rejected(FaceCopy.NO_MATCH, now, FaceInterruption.Identity)
+                .copy(score = reference.bestScore(vector))
         }
-        if (anchor != null && FaceTemplate.cosine(anchor!!, vector) < FaceTemplate.MATCH_THRESHOLD) {
-            return rejected(FaceCopy.ONE_PERSON, now, FaceInterruption.Identity)
+        if (anchor != null) {
+            val anchored = FaceTemplate.cosine(anchor!!, vector)
+            if (anchored < FaceTemplate.MATCH_THRESHOLD) {
+                return rejected(FaceCopy.ONE_PERSON, now, FaceInterruption.Identity).copy(score = anchored)
+            }
         }
         if (now - lastSeenAt > PRESENCE_GAP_MS) reset()
         lastSeenAt = now
         lostStreak = 0
-        padStreak = 0
         if (!eyesWereReady) return progress()
         if (lastAcceptedAt >= 0 && now - lastAcceptedAt < EVIDENCE_SPACING_MS) return progress()
         if (abs(yaw) > CENTER_YAW) return FaceCheckProgress(FaceCopy.LOOK, samples.size)
@@ -175,20 +185,10 @@ internal class FaceCheckSession(
         when {
             interruption == FaceInterruption.Identity || absent -> reset()
             interruption == FaceInterruption.FaceLost -> {
-                padStreak = 0
                 lostStreak++
                 if (lostStreak >= FACE_LOST_FRAMES) reset()
             }
-            interruption == FaceInterruption.Pad -> {
-                lostStreak = 0
-                padStreak++
-                if (stage == FaceStage.Capture) abortCapture()
-                if (padStreak >= PAD_FRAMES) reset()
-            }
-            else -> {
-                lostStreak = 0
-                padStreak = 0
-            }
+            else -> lostStreak = 0
         }
         return FaceCheckProgress(instruction, samples.size)
     }
@@ -220,7 +220,6 @@ internal class FaceCheckSession(
         framingFailedSince = 0L
         lastAcceptedAt = -1L
         lostStreak = 0
-        padStreak = 0
         blinkPeak = 0f
         lastClosure = 1f
         lastFraming = FramingReason.EyesOut
@@ -235,7 +234,6 @@ internal class FaceCheckSession(
 
         const val EVIDENCE_SPACING_MS = 350L
         const val FACE_LOST_FRAMES = 4
-        const val PAD_FRAMES = 3
         const val CENTER_YAW = 0.22f
 
         /** Frames the eye must stay shut before it counts as a squeeze rather than a blink. */

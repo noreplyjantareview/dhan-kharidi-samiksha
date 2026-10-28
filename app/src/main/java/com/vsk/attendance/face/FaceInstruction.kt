@@ -39,7 +39,6 @@ internal object FaceCopy {
         "यह दर्ज चेहरा नहीं है। कैमरे को देखिए"
     )
     val ONE_PERSON = FaceInstruction("Keep the same person in view", "एक ही व्यक्ति को फ़्रेम में रखिए")
-    val TWO_FACES = FaceInstruction("Only one person in the frame", "फ़्रेम में एक ही व्यक्ति रखिए")
     val FACE_LOST = FaceInstruction("Put your face in the camera frame", "चेहरा कैमरे के फ़्रेम में रखिए")
     val MOVE_CLOSER = FaceInstruction("Move a little closer", "कैमरे के थोड़ा पास आइए")
     val MOVE_BACK = FaceInstruction("Move back a little", "थोड़ा पीछे हटिए")
@@ -48,7 +47,6 @@ internal object FaceCopy {
         "पूरा चेहरा रेखा के अंदर रखिए"
     )
     val UPRIGHT = FaceInstruction("Hold your head straight", "सिर सीधा रखिए")
-    val EYE_LEVEL = FaceInstruction("Hold the phone at eye level", "फ़ोन आँखों की ऊँचाई पर पकड़िए")
     val TOO_DARK = FaceInstruction("Face a light source", "रोशनी की ओर देखिए")
     val TOO_BRIGHT = FaceInstruction("Step out of direct sunlight", "तेज़ धूप से थोड़ा दूर रहिए")
     val FLAT_LIGHT = FaceInstruction(
@@ -58,10 +56,6 @@ internal object FaceCopy {
     val TOO_BLURRY = FaceInstruction(
         "Hold still and clean the camera lens",
         "स्थिर रहिए, कैमरे का लेंस साफ़ कीजिए"
-    )
-    val LIVE_FACE = FaceInstruction(
-        "Show your live face, not a photo or screen",
-        "असली चेहरा दिखाइए, फ़ोटो या स्क्रीन नहीं"
     )
     val ENGINE_UNAVAILABLE = FaceInstruction(
         "Face check is unavailable on this phone. Contact your administrator",

@@ -30,8 +30,8 @@ android {
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
 
-        // Field staff install one manually built APK; OpenCV and MediaPipe together ship four ABIs
-        // otherwise, which doubles the download on a rural connection. ARM phones only.
+        // Field staff install one manually built APK, and MediaPipe ships a native library per ABI,
+        // which doubles the download on a rural connection. ARM phones only.
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
 
@@ -82,7 +82,6 @@ dependencies {
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
-    implementation(libs.opencv)
     implementation(libs.mediapipe.tasks.vision)
 
     testImplementation("junit:junit:4.13.2")
@@ -91,9 +90,6 @@ dependencies {
 
 val verifyFaceModels by tasks.registering {
     val models = mapOf(
-        "yunet.onnx" to "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
-        "sface.onnx" to "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79",
-        "minifasnet.onnx" to "d7b3cd9ba8a7ceb13baa8c4720902e27ca3112eff52f926c08804af6b6eecc7b",
         "face_landmarker.task" to "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
     )
     inputs.files(models.keys.map { file("src/main/assets/face/$it") })

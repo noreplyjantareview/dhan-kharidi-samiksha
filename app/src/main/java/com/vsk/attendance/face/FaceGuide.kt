@@ -12,16 +12,17 @@ import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarkerResult
 import kotlin.math.max
 
 /**
- * MediaPipe FaceLandmarker wrapper used only for guidance and blink detection.
+ * MediaPipe FaceLandmarker wrapper: the one model the check now runs.
  *
- * It never produces an identity: recognition stays with SFace and presentation screening stays with
- * MiniFASNet. The CPU delegate is deliberate - the GPU one fails shader setup on some cheap
- * devices, and the whole model runs in well under the 300ms frame budget.
+ * It supplies the framing and blink guidance on every frame and the mesh shape print that carries
+ * identity, so recognition no longer needs a second native engine. The CPU delegate is deliberate -
+ * the GPU one fails shader setup on some cheap devices, and the whole model runs in well under the
+ * 300ms frame budget.
  */
 internal class FaceGuide private constructor(private val landmarker: FaceLandmarker) {
 
-    /** Null when the mesh model sees no face in this frame. */
-    fun read(bitmap: Bitmap, timestampMs: Long): FaceGuidance? {
+    /** One frame read by the mesh: what to tell the employee, and what this face measures. */
+    fun read(bitmap: Bitmap, timestampMs: Long): FaceReading? {
         val result = detect(bitmap, timestampMs)
         val faces = result.faceLandmarks()
         if (faces.isEmpty()) return null
@@ -32,10 +33,14 @@ internal class FaceGuide private constructor(private val landmarker: FaceLandmar
             xy[i * 2] = landmarks[i].x()
             xy[i * 2 + 1] = landmarks[i].y()
         }
-        return FaceGuidance(
-            openRatio = FaceGeometry.eyeOpenness(xy),
-            expressionClosure = blinkFloor(result),
-            framing = FaceGeometry.framing(xy, bitmap.width)
+        val signature = FaceMeshSignature.of(xy, bitmap.height.toFloat() / bitmap.width) ?: return null
+        return FaceReading(
+            guidance = FaceGuidance(
+                openRatio = FaceGeometry.eyeOpenness(xy),
+                expressionClosure = blinkFloor(result),
+                framing = FaceGeometry.framing(xy, bitmap.width)
+            ),
+            signature = signature
         )
     }
 

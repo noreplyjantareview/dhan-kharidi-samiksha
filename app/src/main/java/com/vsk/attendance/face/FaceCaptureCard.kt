@@ -95,10 +95,10 @@ fun FaceCaptureCard(
         var provider: ProcessCameraProvider? = null
         analyzer.executor.execute {
             try {
-                // The mesh model drives the guidance, so it is loaded and warmed before the first
-                // frame; the heavier recognition pass then only runs on evidence frames.
+                // One model reads the whole face: guidance, blink and the shape print all come from
+                // the mesh. It is loaded and warmed before the first frame so the employee never
+                // watches the native graph being built.
                 analyzer.guide = FaceGuide.get(context).apply { warmUp() }
-                analyzer.engine = FaceEngine.get(context)
                 val future = ProcessCameraProvider.getInstance(context)
                 future.addListener({
                     if (!analyzer.closed.get()) {
@@ -164,7 +164,6 @@ private class FaceAnalyzer(
     val closed = AtomicBoolean(false)
     val enabled = AtomicBoolean(true)
     var guide: FaceGuide? = null
-    var engine: FaceEngine? = null
     @Volatile private var ready = false
     private val running = AtomicBoolean(false)
 
@@ -236,6 +235,29 @@ private class FaceAnalyzer(
         session = null
     }
 
+    /** Reused across evidence frames; a face region is a few hundred kilobytes, three times a second. */
+    private var pixels = IntArray(0)
+
+    /**
+     * Light and sharpness measured over the face alone. Metering the wall behind the employee is how
+     * a good check in a procurement shed gets blamed for the shed.
+     */
+    private fun statsOf(frame: Bitmap, region: FrameRegion): FrameStats? {
+        val left = ((region.left - REGION_MARGIN) * frame.width).toInt().coerceAtLeast(0)
+        val top = ((region.top - REGION_MARGIN) * frame.height).toInt().coerceAtLeast(0)
+        val right = ((region.right + REGION_MARGIN) * frame.width).toInt().coerceAtMost(frame.width)
+        val bottom = ((region.bottom + REGION_MARGIN) * frame.height).toInt().coerceAtMost(frame.height)
+        val width = right - left
+        val height = bottom - top
+        if (width < 8 || height < 8) return null
+        // The bitmap API writes rows at the stride, never tighter than four pixels, so the reads and
+        // the buffer are both sized that way rather than assuming a row is exactly `width` long.
+        val stride = maxOf(width, (width + 3) and 3.inv())
+        if (pixels.size < height * stride) pixels = IntArray(height * stride)
+        frame.getPixels(pixels, stride, left, top, width, height)
+        return FaceFrameQuality.measure(pixels, width, height, stride)
+    }
+
     override fun analyze(image: ImageProxy) {
         var base: Bitmap? = null
         var upright: Bitmap? = null
@@ -254,21 +276,22 @@ private class FaceAnalyzer(
             val current = session ?: return
             base = image.toBitmap()
             upright = usableFrame(base, image.imageInfo.rotationDegrees)
-            val model = checkNotNull(guide) { "Face guidance model is not loaded." }
-            val engineModel = checkNotNull(engine) { "Face engine is not loaded." }
+            val model = checkNotNull(guide) { "Face mesh model is not loaded." }
             val seen = model.read(upright, now)
             val progress = if (seen == null) {
                 // Losing the face is a FaceLost interruption, not an identity break: a phone that
                 // drops a frame must never wipe the samples the employee already earned.
                 current.rejected(FaceCopy.FACE_LOST, now, FaceInterruption.FaceLost)
             } else {
-                val guidance = current.onGuidance(seen, now)
+                val guidance = current.onGuidance(seen.guidance, now)
                 if (current.needsEvidence) {
-                    val observation = engineModel.analyze(upright)
-                    if (observation.issue != null) {
-                        current.rejected(observation.issue, now, observation.interruption)
+                    val light = FaceFrameQuality.issue(statsOf(upright, seen.signature.region))
+                    if (light != null) {
+                        current.rejected(light, now, FaceInterruption.Quality)
                     } else {
-                        current.onEvidence(observation.vector, observation.yaw, now)
+                        current.onEvidence(
+                            seen.signature.vector, seen.signature.yaw, now
+                        )
                     }
                 } else {
                     guidance
@@ -278,7 +301,7 @@ private class FaceAnalyzer(
             // Leaving the anchor stage is the only progress a verification can show, so the slow
             // hint keys off it rather than the sample count.
             if (current.currentStage != FaceStage.Align) windowRestarts = 0
-            publish(progress.message, progress.accepted)
+            publish(progress.message.withScore(progress.score), progress.accepted)
             if (progress.complete) {
                 stop()
                 post { if (enabled.get()) onComplete(progress.template) }
@@ -298,8 +321,8 @@ private class FaceAnalyzer(
 
     private companion object {
         /**
-         * A natural blink lasts 100-400ms, so guidance needs roughly eight frames a second. The
-         * recognition and anti-spoof models are gated by the session's own evidence spacing instead.
+         * A natural blink lasts 100-400ms, so guidance needs roughly eight frames a second. Samples
+         * of the shape print are gated by the session's own evidence spacing instead.
          */
         const val FRAME_INTERVAL_MS = 120L
 
@@ -309,14 +332,18 @@ private class FaceAnalyzer(
         /** Silent 120-second windows with no anchor before the line changes to the slow hint. */
         const val SLOW_AFTER_WINDOWS = 2
 
+        /** How much wider than the mesh the light meter looks, in frame fractions. */
+        const val REGION_MARGIN = 0.08f
+
         const val TAG = "FaceCheck"
     }
 }
 
 /**
- * Both models insist on a 32-bit RGBA frame: OpenCV asserts it inside `bitmap2Mat`, and the camera
- * does not always deliver one at the requested format. A frame that is not ARGB_8888 is converted
- * before inference instead of being fed in and trusted.
+ * The mesh is the only model now, so the frame has to be a plain ARGB_8888 bitmap for it and for
+ * the light meter's pixel reads. The camera does not always deliver the requested format, and a
+ * frame that is not ARGB_8888 used to reach a native assert deep inside inference, where nobody
+ * could see it. Converting here turns that into either a working frame or a named failure.
  *
  * Returns either [source] itself or a new bitmap that the caller must recycle; it never recycles
  * anything itself, so the caller's cleanup stays the single owner of both bitmaps.
@@ -355,3 +382,15 @@ private fun causeTag(cause: Throwable): String {
     val tag = root.javaClass.simpleName + if (message.isNullOrBlank()) "" else ": $message"
     return tag.take(CAUSE_MAX_LENGTH + 40)
 }
+
+/**
+ * A shape print lives or dies by one decimal, and only a real face in real light can say which
+ * decimal. A debug build therefore puts the measured similarity and the threshold it failed against
+ * on the line, so the first phone in the field calibrates [FaceTemplate.MATCH_THRESHOLD] instead of
+ * leaving an administrator to describe "not your registered face" over the phone.
+ */
+private fun FaceInstruction.withScore(score: Float): FaceInstruction =
+    if (!BuildConfig.DEBUG || score < 0f) this else FaceInstruction(
+        "$english [mesh %.5f needs %.5f]".format(score, FaceTemplate.MATCH_THRESHOLD).take(INSTRUCTION_MAX_LENGTH),
+        hindi
+    )

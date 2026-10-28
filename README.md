@@ -74,50 +74,66 @@ as absent pulses. Geofence math and windows are enforced server-side.
 - The migration copies each kendra's old timings into its existing staff assignments, so current
   shifts survive the upgrade unchanged.
 
-### Face verification (migration 9)
+### Face verification (migrations 9 and 10)
 
-- **Trained recognition, not image-pattern matching:** OpenCV YuNet detects five landmarks;
-  SFace aligns the face to 112×112 and produces a normalized 128-value embedding. Enrollment stores
-  five quality-checked samples in a versioned `sface-2021dec` template. Old v1/v2 registrations
-  require supervised re-enrollment; there is no fallback to the old matcher.
-- **Guided capture with a blink:** MediaPipe FaceLandmarker reads the 478-point mesh for framing and
-  eyelid state; OpenCV YuNet + SFace + MiniFASNetV2 do identity and liveness. The employee sees one
-  short line at a time in English and Hindi: look at the camera → blink → keep looking. Two centred
-  frames build the anchor, one blink proves a live person is driving the camera, three post-blink
-  frames finish the five-sample template. The randomized head turn is gone — field staff could not
-  read and follow it while holding a phone.
+- **One model in the app: Google MediaPipe Face Mesh.** FaceLandmarker reads the 478-point mesh on
+  every guidance frame. Identity is a **shape print** of that mesh: 39 points sampled on a fixed
+  stride, re-centred on the midpoint between the eyes, rotated so the eye line is level and divided
+  by the inter-ocular distance, then unit-normalized into 78 numbers (`mesh-print-v1`). Because index
+  *i* of the mesh is the same anatomical point on every face, the print needs no hand-picked anatomy
+  table and no trained recognition model.
+- **OpenCV is gone.** YuNet, SFace and MiniFASNetV2, the `org.opencv:opencv:4.12.0` dependency and
+  43 MB of ONNX assets were removed; `app/src/main/assets/face/` is now 3.77 MB and the only native
+  library left is MediaPipe's. That also removes the `CvException … Android Bitmap` assert that was
+  killing registration on the field phone.
+- **What that trade buys, and what it costs:** MediaPipe tasks-vision 1.1.1 publishes no face
+  recognition or embedding task, so nothing in this build compares faces the way SFace did. The print
+  compares the *shape* of a face, so same-person and different-person scores sit close together (see
+  **Accuracy and limits** below) and the operating point is a guess until a phone measures it.
+  Presentation defence is now the blink alone: a printed photo cannot blink, but a rehearsed video
+  replay of the employee blinking can. Supervised activation is what still binds a registration to a
+  physical phone handed over in person.
+- **Registration stores five samples, not one:** two centred frames build the identity anchor, one
+  blink proves a live person is driving the camera, three post-blink frames finish the five-sample
+  template. Every stored sample has to agree with the anchor, so a second person appearing
+  mid-capture restarts the check. The randomized head turn is gone — field staff could not read and
+  follow it while holding a phone.
 - **No button, no dead end:** the check starts as soon as the camera binds and needs no press, so a
   registration is one continuous action. A 120-second window that runs out simply starts again; a
   failed save or a failed duty submission re-runs the check on its own. Only four consecutive broken
   frames, or a model/camera that cannot start, stop the card.
 - **A field failure names itself:** release builds still show the plain one-line instruction, but
-  debug builds append the root cause (class + message) to the failure line. "Face check failed.
-  Close this screen and try again" on its own cannot be fixed, so the CI debug APK reports what
-  actually threw.
-- **Recognition only when it helps:** the heavy OpenCV pass runs only on frames whose eyes are open
-  and whose face is framed, so a check costs about five recognition runs instead of dozens.
-- **Every frame is normalized first:** OpenCV asserts an RGBA_8888 bitmap inside `bitmap2Mat`, and a
-  camera does not always deliver the requested pixel format, so each frame is rotated into an
-  ARGB_8888 bitmap before either model sees it. A frame that arrives already recycled is reported as
-  such instead of surfacing the same native assert.
-- **No face photos are saved or uploaded.** Frames and crops exist only in memory. The mesh model is
-  guidance only: it produces no identity and nothing from it is stored. Numeric templates
-  are still sensitive biometric data: they are stored in the protected staff record and encrypted
-  locally with AndroidKeyStore AES-GCM. Device credentials are encrypted too; app backups are disabled.
+  debug builds append the root cause (class + message) *and* the measured mesh score against the
+  threshold, e.g. `No match [mesh 0.99871 needs 0.99900]`. One screenshot from the field is now
+  enough to calibrate the operating point instead of guessing at it.
+- **Light and blur without OpenCV:** `FaceFrameQuality` grid-samples the face region — the mesh's own
+  bounding box plus an 8 % margin, so the wall behind the employee is not what gets metered — and
+  measures brightness, contrast and mean |Laplacian| from the pixels. Too dark, too bright, flat
+  light and out-of-focus each get their own line.
+- **Every frame is normalized first:** MediaPipe's image builder only accepts an `ARGB_8888` bitmap,
+  and a camera does not always deliver the requested pixel format, so each frame is rotated into an
+  ARGB_8888 bitmap before inference. A frame that arrives already recycled is reported as such
+  instead of surfacing the same native assert.
+- **No face photos are saved or uploaded.** Frames and landmarks exist only in memory. Numeric
+  templates are still sensitive biometric data: they are stored in the protected staff record and
+  encrypted locally with AndroidKeyStore AES-GCM. Device credentials are encrypted too; app backups
+  are disabled.
 - **Supervised activation:** Dashboard → Staff → Activate phone. Personally verify the employee,
   issue a code and share it privately. Codes expire after 15 minutes, work once, and lock after five
   wrong attempts. Normal subsequent login needs only the mobile number on the activated phone.
   Issuing a code leaves the current phone working; redeeming it replaces that phone. Choose face
-  reset only when a new supervised registration is needed. Uninstalling/reinstalling requires activation.
+  reset only when a new supervised registration is needed — which is exactly what every **Old print ·
+  re-enrol** row needs. Uninstalling/reinstalling requires activation.
 - **Protected attendance RPCs:** a device token plus a 90-second, action-bound, single-use challenge
   is required for manual On/Off Duty. Server time controls automatic day-end checkout. Legacy
-  unauthenticated attendance/template RPCs are revoked. Deploy migration 9, dashboard and APK together:
-  older APKs intentionally stop working after this migration.
-- **No migration for the blink change:** `staff_face_challenges.turn` still exists and is still
-  returned by `begin_face_check_v3()`, but it was never bound into the challenge proof
-  (`_face_consume_challenge_v3()` matches staff, device, action and template revision only), so the
-  app stopped reading it and the column is now dead data. The template contract is unchanged: five
-  normalized 128-value `sface-2021dec` samples. Do not rerun or edit migration 9 for this.
+  unauthenticated attendance/template RPCs are revoked. Deploy migration 10, dashboard and APK
+  together; older APKs intentionally stop working after migration 9.
+- **Template contract:** the stored envelope is unchanged (`v: 3`, exactly three JSON keys, five
+  unit-norm samples, ≤ 40 000 characters). Migration 10 binds the sample length to the model tag —
+  `mesh-print-v1` × 78 or `sface-2021dec` × 128 — and reports the mesh print as `face_version` 4, so
+  both shapes validate but the dashboard can tell which build each person can use. The blink change
+  needed no SQL at all: `staff_face_challenges.turn` is still returned by `begin_face_check_v3()` and
+  was never part of the proof, so it is dead data.
 
 **Capture timing (retuned for the blink flow):** a registration or duty check runs on a rolling
 policy rather than a strict per-frame deadline, because mid-range phones need up to ~1.5 s per frame.
@@ -131,21 +147,27 @@ lines; the head-turn flow it replaced routinely exceeded the 90-second challenge
   baseline. Holding the eyes shut is not accepted, and one visible closed frame is enough on a slow
   phone.
 - Post-blink sampling must finish inside 4 s, and the framing must hold: a face that drifts out of
-  frame or is rejected by liveness discards only the samples taken after the blink, never the anchor.
+  frame or fails the mesh quality gate discards only the samples taken after the blink, never the
+  anchor.
 - Quality rejections (move closer, hold still, lighting) no longer restart a check in progress.
   Previously any 1.8 s of rejections wiped the collected samples, so registration could not finish.
-- Dropped detections and liveness rejections restart only after four and three consecutive frames
-  respectively; a person switching in front of the camera or a second face still resets immediately,
-  as does four seconds with no frame at all.
+- A missed detection restarts the check only after four consecutive empty frames; eyes held shut for
+  more than four frames abandon the post-blink window. Someone else switching in front of the camera,
+  a second face, or a print that does not match the anchor resets immediately, as does four seconds
+  with no frame at all.
 - A duty check still has to beat the 90-second challenge. If it expires, the screen asks for a new
   face capture; the timeout was not raised to cover this, because the nonce TTL is the security bound.
 
 **Accuracy and liveness limits:** this is not Aadhaar FaceRD, certified PAD or a measured equivalent.
-The initial SFace cosine threshold is 0.363; MiniFASNet live probability must be at least 0.80.
+The mesh print compares at `MATCH_THRESHOLD = 0.999` cosine, and the second-best sample in the five
+must clear it too; the light/blur gate needs at least `MIN_EDGES = 5` gradient edges in the face
+region. Both numbers come from synthetic geometry only — same-face prints of one person sit near
+0.9999 and unrelated faces near 0.97–0.995 — so they are provisional operating points, not accuracy
+percentages. The debug line names the real value on every failure (`No match [mesh 0.99871 needs
+0.99900]`); read it on the actual phones before changing anything, and do not lower a threshold just
+to make retries pass.
 The blink is a liveness *aid*, not a presentation-attack classifier: a high-quality video of the
-employee blinking can satisfy it, which is why MiniFASNet still screens every evidence frame.
-These are provisional operating points, not accuracy percentages. Validate on the actual phones,
-lighting and employee population before rollout; do not lower thresholds just to make retries pass.
+employee blinking can satisfy it, and nothing in this build screens for a replay.
 Employees who cannot blink on command (paralysis, severe ptosis, one eye) currently cannot complete
 the check: they need a supervised exemption, not a lower threshold.
 A modified/rooted app can bypass client-side face checks despite device authorization and nonces.
@@ -186,10 +208,21 @@ Run **all** migrations in the Supabase **SQL Editor** (New query → paste → R
 9. [`supabase/face_auth_v3.sql`](supabase/face_auth_v3.sql) — supervised phone activation, locked
    v3 enrollment, device-authorized attendance and single-use face-check challenges. Run the entire
    transaction once; read-only checks follow it. Activate every existing employee and re-enroll
-   their face using the matching new APK. **Do not rerun older migrations afterward:** they can
-   restore legacy RPC grants; migration 9 must remain last.
+   their face using the matching new APK.
+10. [`supabase/face_mesh_v4.sql`](supabase/face_mesh_v4.sql) — accepts the MediaPipe Face Mesh shape
+    print (`mesh-print-v1`, five 78-value samples) next to the existing `sface-2021dec` print, and
+    reports which is which (`face_version` 4 = mesh, 3 = SFace). Run it after migration 9, then
+    deploy the matching dashboard and APK. **Do not rerun older migrations afterward:** they can
+    restore legacy RPC grants; migration 10 must remain last.
 
 All are re-runnable. Verification `SELECT`s at the bottom of each confirm success.
+
+**Re-enrolling after migration 10:** nobody is blocked by the engine swap. A phone still running the
+older APK keeps its SFace print and keeps marking attendance. A phone on the new APK cannot read that
+print, so its Face column says **Old print · re-enrol**: issue an activation code with
+**Activate phone and reset face** and the employee registers once more, supervised. A plain activation
+keeps the old print, so the reset option is the only thing that moves someone off it — the last
+verification query in migration 10 counts how many people are still on it.
 
 ### Create your first kendra
 
@@ -235,9 +268,10 @@ You don't need the IDE. Two options:
 Staff log in with the mobile number an admin enrolled, plus a one-time activation code on a new
 installation. Admins who log into the phone app see a notice pointing them to the web dashboard.
 Android screenshots/recording and recent-app thumbnails are blocked to keep camera frames out of
-system captures. Inference needs no model download. Bundled `assets/face/` is 43 MB before APK
-compression (SFace alone is 38.7 MB). The blink flow adds Google MediaPipe: its native library is
-14.4 MB for `arm64-v8a` and 10.1 MB for `armeabi-v7a`, and `face_landmarker.task` is 3.76 MB.
+system captures. Inference needs no model download. Bundled `assets/face/` is 3.77 MB in total —
+`face_landmarker.task` (3.76 MB) plus the MediaPipe license and notice files; the OpenCV and ONNX
+assets it replaced were 43 MB. The only native code is Google MediaPipe: its library is 14.4 MB for
+`arm64-v8a` and 10.1 MB for `armeabi-v7a`.
 Because field staff install one hand-built APK, `app/build.gradle.kts` filters to those two ARM ABIs
 instead of shipping x86/x86_64 as well.
 
@@ -401,30 +435,33 @@ Early present pulse + many absent pulses = "came, then left." No check-in + no p
 
 ## Verification and limits
 
-- JVM face tests: `gradle testDebugUnitTest` with the Android toolchain. Eighty-three template,
-  geometry, blink-tracker and capture-session tests also passed using the Kotlin 2.0.21 JVM compiler
-  directly, without installing an Android SDK.
+- JVM face tests: `gradle testDebugUnitTest` with the Android toolchain. One hundred and three print,
+  template, geometry, blink-tracker, quality-gate and capture-session tests also passed using the
+  Kotlin 2.0.21 JVM compiler directly, without installing an Android SDK.
 - SQL regressions: `npm ci --prefix supabase/tests` then `npm test --prefix supabase/tests`.
-  This creates a disposable in-memory PostgreSQL database, applies all nine migrations, tests 110
-  authorization/activation/challenge assertions, and reruns migration 9 on empty and populated state.
+  This creates a disposable in-memory PostgreSQL database, applies all ten migrations, tests 110
+  authorization/activation/challenge assertions plus 25 mesh-print assertions, and reruns migrations
+  9 and 10 on both empty and populated state.
   It uses no Supabase credentials or live connections. Do not paste the test fixture into a live database.
 - Blink thresholds were tuned against a real laptop webcam in a browser prototype (MediaPipe
   tasks-vision 1.1.1 in the GPU delegate, 30 fps): a complete check took 9.1 s from the camera opening,
   with blink peak 0.90 against the 0.55 close threshold and zero framing rejections over 137 face
   frames. That prototype is not part of this repository; the shipped values come from it, and the
   phone flow is the same: no button, guidance runs until a blink completes the check.
-- Model qualification: pinned file hashes checked; MiniFASNet ONNX initializers matched the upstream
-  checkpoint exactly after conversion transforms. OpenCV 4.12 desktop CPU synthetic inference passed
-  for all three packaged models. The Kotlin engine compiled against actual OpenCV Java APIs, and
-  `FaceGuide.kt` against actual MediaPipe 1.1.1 task classes, both with minimal Android stubs. These
-  checks are **not an Android APK build or biometric accuracy test**.
+- Model qualification: `face_landmarker.task` is the unmodified float16 model MediaPipe publishes for
+  tasks-vision 1.1.1, its SHA-256 is pinned in `app/build.gradle.kts`, and `verifyFaceModels` runs on
+  every `preBuild` so a swapped asset fails the build. `FaceGuide.kt` and the mesh print were
+  signature-compiled against the actual MediaPipe 1.1.1 task classes with minimal Android stubs.
+  MediaPipe ships no face-recognition task, so the print is this repository's own geometry and is
+  **not** a certified biometric matcher; none of these checks is an Android APK build or an accuracy
+  test.
 - Dashboard activation/reset, failure/retry, narrow layouts, assignments and bulk-upload browser
   regressions passed in isolated preview mode, with production API access blocked.
 - Full APK compilation, Android ARM/JNI execution, camera UI and real-person/attack validation remain
   required on physical phones. `FaceCaptureCard.kt`'s Compose half has no local compiler here (it needs
   the Compose plugin), so CI is its first real build; its `FaceAnalyzer` region and file-level helpers
   are sliced verbatim out of that same file and signature-compiled locally against Android/CameraX
-  stubs plus the real OpenCV and MediaPipe classes, because two analyzer edits shipped broken before
+  stubs plus the real MediaPipe classes, because two analyzer edits shipped broken before
   that check existed. The current CI build workflow does not run JVM tests automatically;
   run the test command as part of release validation before distributing the APK.
 - Attendance tracking is **foreground only** (app open). Working with the app closed needs Android

@@ -336,11 +336,13 @@
             ? `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-violet-100 text-violet-700">NODAL</span>`
             : `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-blue-100 text-blue-700">STAFF</span>`}${
             r.role === "admin" ? ` <span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-slate-100 text-slate-600">ADMIN</span>` : ""}</td>
-          <td>${r.face_version === 3 && r.face_registered
-            ? `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-green-100 text-green-700">Registered · v3</span>`
-            : r.face_version > 0 && r.face_version < 3
-              ? `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-amber-100 text-amber-700">Upgrade needed · v${esc(r.face_version)}</span>`
-              : `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-amber-100 text-amber-700">Enrollment pending</span>`}</td>
+          <td>${r.face_version === 4 && r.face_registered
+            ? `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-green-100 text-green-700">Face Mesh · registered</span>`
+            : r.face_version === 3
+              ? `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-red-100 text-red-700">Old print · re-enrol</span>`
+              : r.face_version > 0 && r.face_version < 3
+                ? `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-amber-100 text-amber-700">Upgrade needed · v${esc(r.face_version)}</span>`
+                : `<span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide bg-amber-100 text-amber-700">Enrollment pending</span>`}</td>
           <td><span class="inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide ${r.device_activated ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-600"}">${r.device_activated ? "Activated" : "Not activated"}</span></td>
           <td class="text-slate-500">${esc(r.kendra_names || "—")}</td>
           <td>${r.role !== "admin"
@@ -379,6 +381,7 @@
     $("#faceActivationForm").reset();
     clearFaceActivationResult();
     $("#faceActivationName").textContent = `${staff.full_name} · ${staff.employee_code || "No employee code"} · ${staff.mobile_number}`;
+    $("#faceActivationLegacy").classList.toggle("hidden", staff.face_version !== 3);
     $("#faceActivationPreview").classList.toggle("hidden", !PREVIEW);
     updateFaceActivationControls();
     activationScrollLocked = document.body.classList.contains("overflow-hidden");
@@ -953,10 +956,10 @@
       { id: "k5", name: "Kendra Rajnandgaon-5", latitude: 21.0972, longitude: 81.0317, radius_m: 200, verify_interval_min: 30, staff_count: 2, nodal_count: 0 },
     ];
     const S = [
-      { id: "s1", full_name: "Ram Kumar Sahu", employee_code: "EMP-0001", mobile_number: "9812345670", role: "staff", category: "staff", face_version: 3, device_activated: true, face_registered: true, kendra_names: "Kendra Raipur-1 (08:00)" },
+      { id: "s1", full_name: "Ram Kumar Sahu", employee_code: "EMP-0001", mobile_number: "9812345670", role: "staff", category: "staff", face_version: 4, device_activated: true, face_registered: true, kendra_names: "Kendra Raipur-1 (08:00)" },
       { id: "s2", full_name: "Sita Verma", employee_code: "EMP-0002", mobile_number: "9876543210", role: "staff", category: "nodal", face_version: 2, device_activated: false, face_registered: false, kendra_names: "Kendra Raipur-1, Kendra Dhamtari-2, Kendra Balod-3" },
       { id: "s3", full_name: "Anil Yadav", employee_code: "EMP-0003", mobile_number: "9765432109", role: "staff", category: "staff", face_version: 0, device_activated: false, face_registered: false, kendra_names: "Kendra Dhamtari-2 (14:00)" },
-      { id: "s4", full_name: "Kavita Nishad", employee_code: "EMP-0004", mobile_number: "9654321098", role: "staff", category: "staff", face_version: 3, device_activated: true, face_registered: true, kendra_names: "Kendra Balod-3 (09:30)" },
+      { id: "s4", full_name: "Kavita Nishad", employee_code: "EMP-0004", mobile_number: "9654321098", role: "staff", category: "staff", face_version: 4, device_activated: true, face_registered: true, kendra_names: "Kendra Balod-3 (09:30)" },
       { id: "s5", full_name: "Mahesh Dewangan", employee_code: "EMP-0005", mobile_number: "9543210987", role: "staff", category: "nodal", face_version: 3, device_activated: true, face_registered: true, kendra_names: "Kendra Bemetara-4, Kendra Rajnandgaon-5" },
       { id: "s6", full_name: "Pooja Sahu", employee_code: "EMP-0006", mobile_number: "9432109876", role: "admin", category: "staff", face_version: 0, device_activated: false, face_registered: false, kendra_names: null },
     ];
