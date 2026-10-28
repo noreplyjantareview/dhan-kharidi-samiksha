@@ -310,16 +310,16 @@ private class FaceAnalyzer(
         /** Consecutive frame exceptions before the check gives up: enough for a hiccup, not a hang. */
         const val FRAME_FAILURES_ALLOWED = 4
 
-        /** A cause line is truncated, then the plain instruction plus a tag is kept under the limit. */
-        const val CAUSE_MAX_LENGTH = 120
-        const val INSTRUCTION_MAX_LENGTH = 220
-
         /** Silent 120-second windows with no anchor before the line changes to the slow hint. */
         const val SLOW_AFTER_WINDOWS = 2
 
         const val TAG = "FaceCheck"
     }
 }
+
+/** A cause line is truncated, and the instruction plus that tag is then kept under the screen limit. */
+private const val CAUSE_MAX_LENGTH = 120
+private const val INSTRUCTION_MAX_LENGTH = 220
 
 /**
  * Field staff read the plain line; a debug build appends the root cause, because "try again" on its
